@@ -1,0 +1,17 @@
+{
+  "keywords": ["quantum", "qubit", "qubits", "superposition", "entanglement", "shor", "grover", "bloch"],
+  "documents": [
+    {
+      "url": "https://example.edu/quantum/intro",
+      "title": "Introduction to Quantum Computing",
+      "published_date": "2024-03-01",
+      "content": "# Qubits\n\nA qubit is represented using the Bloch sphere. Superposition is a fundamental principle of quantum mechanics. Superposition enables quantum parallelism. Quantum entanglement is a correlation between qubits that has no classical counterpart.\n\n# Algorithms\n\nShor's algorithm uses the quantum Fourier transform. Quantum Fourier Transform (QFT) is a prerequisite for Shor's algorithm. Grover's algorithm was developed by Lov Grover. Quantum decoherence prevents reliable computation on large devices.\n\nQuantum computing is defined as computation that exploits quantum-mechanical phenomena such as superposition and entanglement."
+    },
+    {
+      "url": "https://example.org/blog/qubits-explained?utm_source=newsletter",
+      "title": "Qubits Explained for Teachers",
+      "published_date": "2023-11-20",
+      "content": "Qubits are represented using the Bloch sphere, a geometric picture of a two-level system. The Bloch sphere is a geometric representation of a single qubit state. Measurement causes the collapse of the superposition. Quantum gates are part of quantum circuits. A Hadamard gate is a type of quantum gate that creates superposition from a basis state."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "keywords": ["cloud", "serverless", "lambda", "aws", "kubernetes", "iaas", "paas", "virtualization"],
+  "documents": [
+    {
+      "url": "https://example.edu/cloud/models",
+      "title": "Cloud Service Models",
+      "published_date": "2024-01-10",
+      "content": "Cloud computing is defined as the on-demand delivery of computing resources over the internet. Infrastructure as a Service (IaaS) provides virtual machines and networks. Platform as a Service is a cloud service model for deploying applications. Virtualization enables cloud computing at scale. Auto scaling reduces operational costs for variable workloads."
+    },
+    {
+      "url": "https://example.com/serverless-guide",
+      "title": "A Practical Guide to Serverless",
+      "published_date": "2024-06-02",
+      "content": "AWS Lambda is a serverless compute service. AWS Lambda was developed by Amazon Web Services. Serverless computing is a cloud execution model where the provider manages servers. Kubernetes is used by cloud-native applications for orchestration. Amazon S3 provides object storage for static assets and backups."
+    }
+  ]
+}

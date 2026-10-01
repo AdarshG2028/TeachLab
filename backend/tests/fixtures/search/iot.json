@@ -1,0 +1,17 @@
+{
+  "keywords": ["iot", "internet", "things", "sensor", "sensors", "mqtt", "gateway", "edge", "zigbee"],
+  "documents": [
+    {
+      "url": "https://example.edu/iot/architecture",
+      "title": "IoT Architecture Basics",
+      "published_date": "2022-09-15",
+      "content": "The Internet of Things (IoT) consists of connected devices. An IoT gateway is part of an IoT architecture. A temperature sensor measures temperature. A humidity sensor measures humidity. Each IoT device uses MQTT. MQTT is a lightweight messaging protocol designed for constrained devices."
+    },
+    {
+      "url": "https://example.net/edge-computing",
+      "title": "Edge Computing and Sensors",
+      "published_date": "2023-05-30",
+      "content": "Edge computing reduces network latency for IoT applications. Temperature sensors measure temperature in smart buildings. Zigbee is an alternative to Wi-Fi for low-power networks. Sensor data is encrypted with AES before transmission."
+    }
+  ]
+}

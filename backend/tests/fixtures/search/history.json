@@ -1,0 +1,17 @@
+{
+  "keywords": ["french", "revolution", "bastille", "enlightenment", "robespierre", "terror", "history", "1789"],
+  "documents": [
+    {
+      "url": "https://example.edu/history/french-revolution",
+      "title": "The French Revolution: Causes and Course",
+      "published_date": "2021-07-14",
+      "content": "The French Revolution is known as a period of radical political change in France that began in 1789. The Enlightenment caused the French Revolution. The financial crisis caused the French Revolution. The storming of the Bastille preceded the Reign of Terror. The Bastille is located in Paris. The Committee of Public Safety was led by Maximilien Robespierre."
+    },
+    {
+      "url": "https://example.org/revisionist-view",
+      "title": "Revisionist Perspectives on 1789",
+      "published_date": "2019-02-01",
+      "content": "The Enlightenment did not cause the French Revolution, according to revisionist historians. The Reign of Terror followed the storming of the Bastille. The Enlightenment influenced the French Revolution. The Bastille is located in Lyon, according to one unreliable pamphlet."
+    }
+  ]
+}
