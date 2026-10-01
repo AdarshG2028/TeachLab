@@ -57,7 +57,9 @@ class Neo4jGraphStore:
 
     @classmethod
     def connect(cls, uri: str, user: str, password: str, database: str = "neo4j") -> "Neo4jGraphStore":
-        return cls(AsyncGraphDatabase.driver(uri, auth=(user, password), max_connection_lifetime=300), database)
+        driver = AsyncGraphDatabase.driver(uri, auth=(user, password), max_connection_lifetime=300,
+                                           notifications_min_severity="OFF")
+        return cls(driver, database)
 
     async def close(self) -> None:
         await self.driver.close()

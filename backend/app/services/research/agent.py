@@ -227,9 +227,17 @@ class ResearchAgent:
                   f"Recent conversation summary: {summary[:1500] or '(none)'}\n\n"
                   f"Teacher message:\n{question}"))
 
-        # sufficiency decision: the model suggests, deterministic rules decide
+        # sufficiency decision: the model suggests, deterministic rules decide. Existing knowledge counts as
+        # sufficient when enough strong passages match, or when the focus concepts are already in the graph
+        # with supporting claims and at least one relevant passage exists.
         explicit = plan.intent == "research_request"
-        sufficient = len(strong) >= self.settings.sufficiency_min_hits
+        focus_entities: list[dict] = []
+        for name in plan.focus_concepts[:5]:
+            focus_entities.extend(await self.c.graph.search_entities(ws_id, name, limit=2))
+        focus_facts = await self.c.graph.facts_for_entities(ws_id, [e["id"] for e in focus_entities], limit=10)
+        graph_supported = bool(plan.focus_concepts) and len(focus_facts) >= 2 and any(
+            p.score >= self.settings.retrieval_min_score * 0.8 for p in local)
+        sufficient = len(strong) >= self.settings.sufficiency_min_hits or graph_supported
         do_research = bool(plan.search_queries) and (explicit or (plan.needs_external_research and not sufficient)
                                                      or (not local and plan.intent in ("question", "explain")))
         if do_research and not plan.search_queries:
@@ -253,9 +261,7 @@ class ResearchAgent:
         if progress:
             await progress("retrieving knowledge", 60)
         passages = [p for p in local if p.score >= self.settings.retrieval_min_score * 0.8] or local[:3]
-        entity_rows = []
-        for name in plan.focus_concepts[:5]:
-            entity_rows.extend(await self.c.graph.search_entities(ws_id, name, limit=2))
+        entity_rows = focus_entities
         chunk_entities = await self.c.graph.entities_for_chunks(ws_id, [p.chunk_id for p in passages])
         entity_ids = list(dict.fromkeys([e["id"] for e in entity_rows] + [e["id"] for e in chunk_entities]))[:12]
         facts = await self.c.graph.facts_for_entities(ws_id, entity_ids, limit=30)
@@ -287,7 +293,7 @@ class ResearchAgent:
         text, citations = self._ground(answer, {m: markers[m] for m in built.included_passages})
         meta = {
             "reply_to": message_id, "intent": plan.intent, "research": {
-                "performed": do_research, "queries": outcome.queries, "cached_queries": outcome.cached_queries,
+                "performed": do_research, "sufficient_locally": sufficient, "queries": outcome.queries, "cached_queries": outcome.cached_queries,
                 "new_sources": len(outcome.new_source_ids), "reused_sources": len(outcome.reused_source_ids),
                 "failures": outcome.failures[:5], "graph_job_id": graph_job},
             "concepts_explained": answer.concepts_explained, "suggested_next": answer.suggested_next,

@@ -322,8 +322,10 @@ class FakeLLMProvider(LLMProvider):
                          f"{concept} was first described in the year {1000 + n * 7}",
                          f"{concept} only applies to marine biology ({n})"]
                 choices = wrong[:k] + [sent[:160]] + wrong[k:]
-                q = {**base, "text": f"Which statement about {concept} is supported by the course material? "
-                                     f"(item {sid})", "choices": choices, "correct_choice": k, "answer": sent[:160]}
+                stem = (f"According to the researched sources, which statement about {concept} is accurate?"
+                        if shift else f"Which statement about {concept} is supported by the course material?")
+                q = {**base, "text": f"{stem} (item {sid})", "choices": choices, "correct_choice": k,
+                     "answer": sent[:160]}
             elif qtype == "true_false":
                 q = {**base, "text": f"True or false: {sent}", "answer": "True"}
             elif qtype == "fill_blank":

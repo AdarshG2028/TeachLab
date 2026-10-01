@@ -31,7 +31,8 @@ class BGEEmbeddingProvider(EmbeddingProvider):
         self.query_instruction = query_instruction
         log.info("embedding_model_loading", model=model_name, device=device)
         self._model = SentenceTransformer(model_name, device=device, cache_folder=cache_dir)
-        self.dim = int(self._model.get_sentence_embedding_dimension())
+        get_dim = getattr(self._model, "get_embedding_dimension", None) or self._model.get_sentence_embedding_dimension
+        self.dim = int(get_dim())
         self._lock = threading.Lock()  # sentence-transformers encode is not guaranteed thread-safe
         log.info("embedding_model_loaded", model=model_name, dim=self.dim)
 

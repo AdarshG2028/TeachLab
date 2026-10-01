@@ -497,6 +497,9 @@ class AssessmentService:
             last_issues = validate_structure(new, slot)
             if any(normalize_key(new.text) == normalize_key(x.text) for x in existing.values()):
                 last_issues.append(Issue(slot.slot_id, "duplicate", "Duplicates another question", "error"))
+            if normalize_key(new.text) == normalize_key(q.text):
+                last_issues.append(Issue(slot.slot_id, "unchanged", "Replacement is identical to the original "
+                                                                    "question; write a different one", "error"))
             if not any(i.severity == "error" for i in last_issues):
                 break
             prior = {slot.slot_id: last_issues}
