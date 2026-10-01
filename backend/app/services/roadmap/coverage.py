@@ -27,7 +27,7 @@ STAGES = ("planned", "researched", "explained", "discussed", "completed")
 
 
 class CoverageService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
 
     async def resolve_concepts(self, workspace_id: str, names: list[str]) -> dict[str, str]:

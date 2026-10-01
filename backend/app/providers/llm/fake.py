@@ -350,5 +350,7 @@ class FakeLLMProvider(LLMProvider):
                      "answer": f"A good answer explains that {sent}",
                      "rubric": [{"criterion": "Correct core idea", "marks": marks_f / 2},
                                 {"criterion": "Clear explanation with example", "marks": marks_f / 2}]}
+            if shift and qtype != "mcq":  # a repaired question is reworded, as a real model would
+                q["text"] = f"Considering another angle of {concept}: {q['text']}"
             out.append(q)
         return {"questions": out}

@@ -151,7 +151,7 @@ class Source(Base):
     error: Mapped[str | None] = mapped_column(Text)
     meta: Mapped[dict[str, Any]] = mapped_column(default=dict)
 
-    chunks: Mapped[list["Chunk"]] = relationship(back_populates="source", cascade="all, delete-orphan",
+    chunks: Mapped[list[Chunk]] = relationship(back_populates="source", cascade="all, delete-orphan",
                                                  order_by="Chunk.idx")
 
 
@@ -250,7 +250,7 @@ class RoadmapVersion(Base):
     meta: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = _created()
 
-    phases: Mapped[list["RoadmapPhase"]] = relationship(back_populates="version", cascade="all, delete-orphan",
+    phases: Mapped[list[RoadmapPhase]] = relationship(back_populates="version", cascade="all, delete-orphan",
                                                         order_by="RoadmapPhase.order_index")
 
 
@@ -270,7 +270,7 @@ class RoadmapPhase(Base):
     status: Mapped[str] = mapped_column(String(16), default="not_started")  # not_started|in_progress|completed|skipped
 
     version: Mapped[RoadmapVersion] = relationship(back_populates="phases")
-    items: Mapped[list["RoadmapItem"]] = relationship(back_populates="phase", cascade="all, delete-orphan",
+    items: Mapped[list[RoadmapItem]] = relationship(back_populates="phase", cascade="all, delete-orphan",
                                                       order_by="RoadmapItem.order_index")
 
 
@@ -350,7 +350,7 @@ class Assessment(Base):
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
-    questions: Mapped[list["Question"]] = relationship(back_populates="assessment", cascade="all, delete-orphan",
+    questions: Mapped[list[Question]] = relationship(back_populates="assessment", cascade="all, delete-orphan",
                                                        order_by="(Question.section_order, Question.order_index)")
 
 

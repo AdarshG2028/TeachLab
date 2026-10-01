@@ -26,7 +26,7 @@ class RetrievedPassage:
 
 
 class RetrievalService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
 
     async def embed_query(self, query: str) -> list[float]:

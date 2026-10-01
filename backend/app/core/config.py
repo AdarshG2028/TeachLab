@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str | None = None
 
     @model_validator(mode="after")
-    def _guard_production(self) -> "Settings":
+    def _guard_production(self) -> Settings:
         if self.env == Environment.PRODUCTION:
             problems = []
             if self.auth_provider == "local":

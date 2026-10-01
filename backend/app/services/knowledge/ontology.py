@@ -388,7 +388,7 @@ class OntologyResolver:
             for a in pos:
                 for b in neg:
                     record(a, b, "one source asserts the relation, another denies it")
-        for (subj, pred), group in by_subject_pred.items():
+        for (_subj, pred), group in by_subject_pred.items():
             spec = self.registry.specs.get(pred)
             if not spec or not spec.single_valued:
                 continue

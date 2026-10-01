@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import func, select
 
 from app.container import Container
+from app.core.errors import NotFoundError
 from app.db.models import CoverageRecord, Extraction, OntologyProposal, Source, Workspace
 from app.providers.search.fixture import FixtureSearchProvider
 
@@ -144,7 +145,7 @@ async def test_entity_merge_rewires_relations_and_dedupes_claims(container: Cont
     after = await c.graph.entity_detail(ws, lam["id"])
     assert "serverless compute service" in [a.lower() for a in after["aliases"]]
     assert len(after["claims"]) >= len(before["claims"]) - 1
-    with pytest.raises(Exception):
+    with pytest.raises(NotFoundError):
         await c.graph.entity_detail(ws, svc["id"])
 
 
@@ -156,7 +157,7 @@ async def test_graph_workspace_isolation(container: Container):
     assert (await c.graph.stats(ws_b))["entities"] == 0
     assert await c.graph.search_entities(ws_b, "Qubit") == []
     a_entity = (await c.graph.search_entities(ws_a, "Qubit"))[0]
-    with pytest.raises(Exception):
+    with pytest.raises(NotFoundError):
         await c.graph.entity_detail(ws_b, a_entity["id"])  # other workspace's id is not reachable
     assert await c.retrieval.search(ws_b, "qubit bloch sphere") == []
     assert await c.vectors.count(ws_b) == 0

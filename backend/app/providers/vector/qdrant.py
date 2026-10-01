@@ -32,7 +32,7 @@ class QdrantVectorStore(VectorStore):
 
     @classmethod
     def from_settings(cls, *, url: str | None, api_key: str | None, path: str, collection: str,
-                      dim: int) -> "QdrantVectorStore":
+                      dim: int) -> QdrantVectorStore:
         if url:
             client = AsyncQdrantClient(url=url, api_key=api_key, timeout=30)
         elif path == ":memory:":

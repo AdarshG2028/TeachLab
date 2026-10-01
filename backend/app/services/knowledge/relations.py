@@ -209,7 +209,7 @@ class RelationRegistry:
     statuses: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def default(cls) -> "RelationRegistry":
+    def default(cls) -> RelationRegistry:
         reg = cls()
         for spec in CANONICAL:
             reg.add(spec, status="canonical")

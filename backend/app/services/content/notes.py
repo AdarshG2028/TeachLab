@@ -83,7 +83,7 @@ def _system(kind: str, depth: str, audience: str, language: str) -> str:
 
 
 class NotesService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
 
     async def _outline(self, ws: Workspace, cfg: NotesConfig) -> list[dict[str, Any]]:

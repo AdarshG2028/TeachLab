@@ -70,7 +70,7 @@ class WorkspaceOverview(BaseModel):
     latest_session_id: str | None
     roadmap_version: int | None
     workflow: list[WorkflowStep]
-    active_jobs: list["JobOut"]
+    active_jobs: list[JobOut]
 
 
 class SessionCreate(BaseModel):
@@ -106,7 +106,7 @@ class MessageCreate(BaseModel):
 
 class ChatTurnOut(BaseModel):
     message: MessageOut
-    job: "JobOut"
+    job: JobOut
 
 
 # ---------------------------------------------------------------- jobs

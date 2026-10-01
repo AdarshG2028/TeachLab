@@ -120,7 +120,7 @@ class ResearchOutcome:
 
 
 class ResearchAgent:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
         self.settings = c.settings
 

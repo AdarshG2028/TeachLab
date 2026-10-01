@@ -21,9 +21,10 @@ async def with_retries(
     op: str,
     base_delay: float = 1.0,
     max_delay: float = 30.0,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> T:
     """Retry ``fn`` on retryable ProviderErrors, honoring ``retry_after`` hints."""
+    sleep = sleep or asyncio.sleep
     last: ProviderError | None = None
     for attempt in range(1, attempts + 1):
         try:

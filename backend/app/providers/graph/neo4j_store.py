@@ -56,7 +56,7 @@ class Neo4jGraphStore:
         self.database = database
 
     @classmethod
-    def connect(cls, uri: str, user: str, password: str, database: str = "neo4j") -> "Neo4jGraphStore":
+    def connect(cls, uri: str, user: str, password: str, database: str = "neo4j") -> Neo4jGraphStore:
         driver = AsyncGraphDatabase.driver(uri, auth=(user, password), max_connection_lifetime=300,
                                            notifications_min_severity="OFF")
         return cls(driver, database)

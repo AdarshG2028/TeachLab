@@ -15,6 +15,7 @@ import os
 import sys
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 MAX_OUTPUT = 4000
 
@@ -29,13 +30,12 @@ class CodeRunResult:
 async def run_python_tests(solution: str, tests: str, timeout: float) -> CodeRunResult:
     program = f"{solution}\n\n# --- tests ---\n{tests}\nprint('ALL_TESTS_PASSED')\n"
     with tempfile.TemporaryDirectory(prefix="teachlab-code-") as tmp:
-        path = os.path.join(tmp, "main.py")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(program)
+        path = Path(tmp) / "main.py"
+        await asyncio.to_thread(path.write_text, program, encoding="utf-8")
         env = {"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8", "SYSTEMROOT": os.environ.get(
             "SYSTEMROOT", "")}
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-I", "-S", path, cwd=tmp, env=env,
+            sys.executable, "-I", "-S", str(path), cwd=tmp, env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, stdin=asyncio.subprocess.DEVNULL)
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)

@@ -113,7 +113,7 @@ def answer_key_sections(questions: list[Question], bp: Blueprint) -> list[Docume
 
 
 class ExportService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
 
     async def _notes(self, ws_id: str, notes_id: str | None, kind: str) -> NotesDocument:

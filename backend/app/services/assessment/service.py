@@ -94,7 +94,7 @@ EXPANDED_RULE = ("COVERAGE MODE EXPANDED: questions may apply the covered concep
 
 
 class AssessmentService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
         self.settings = c.settings
 
@@ -127,6 +127,8 @@ class AssessmentService:
             if k not in names and k in recs:
                 names[k] = recs[k].concept_name
         scope = [{"key": k, "name": names[k], "related": False} for k in base if k in names]
+        if not cfg.topics:  # deterministic order -> reproducible blueprints
+            scope.sort(key=lambda c: (c["name"].lower(), c["key"]))
         if cfg.coverage_mode == "expanded" and scope:
             keys = {c["key"] for c in scope}
             for c in list(scope)[:20]:

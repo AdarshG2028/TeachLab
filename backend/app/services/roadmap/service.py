@@ -71,7 +71,7 @@ def phase_key(workspace_id: str, title: str) -> str:
 
 
 class RoadmapService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
 
     # ------------------------------------------------------------------ reads

@@ -40,7 +40,7 @@ class IngestResult:
 
 
 class IngestionService:
-    def __init__(self, c: "Container") -> None:
+    def __init__(self, c: Container) -> None:
         self.c = c
         self.settings = c.settings
         self.fetcher = SafeFetcher(max_bytes=self.settings.fetch_max_mb * 1024 * 1024,

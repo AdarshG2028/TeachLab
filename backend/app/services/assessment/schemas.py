@@ -61,7 +61,7 @@ class AssessmentConfig(BaseModel):
         return out
 
     @model_validator(mode="after")
-    def _consistency(self) -> "AssessmentConfig":
+    def _consistency(self) -> AssessmentConfig:
         if not self.sections and not self.num_questions:
             raise ValueError("Provide either sections or num_questions")
         if self.sections and self.num_questions and sum(s.count for s in self.sections) != self.num_questions:
