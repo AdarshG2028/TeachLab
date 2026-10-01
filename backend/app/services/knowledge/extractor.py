@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.tokens import count_tokens
-from app.llm.structured import UNTRUSTED_POLICY, generate_structured, untrusted
+from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, untrusted
 from app.providers.llm.base import LLMProvider
 from app.services.knowledge.schemas import ExtractionResult
 
@@ -65,4 +65,4 @@ async def extract_candidates(llm: LLMProvider, *, topic: str, passages: list[Pas
             f"Passage ids available: {', '.join(p.pid for p in passages)}\n\n{body}\n\n"
             "Extract entities, relations and facts as JSON.")
     return await generate_structured(llm, task="extract", system=SYSTEM, user=user, schema=ExtractionResult,
-                                     tier="fast", max_tokens=3000, temperature=0.1)
+                                     tier="fast", max_tokens=output_budget(llm, "fast", 3000), temperature=0.1)

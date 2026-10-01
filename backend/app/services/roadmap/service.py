@@ -21,8 +21,9 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import NotFoundError, ValidationFailed
 from app.core.ids import new_id, normalize_key, stable_id
 from app.core.logging import get_logger
+from app.core.tokens import fit_items
 from app.db.models import CoverageRecord, ResearchSession, RoadmapItem, RoadmapPhase, RoadmapVersion, Workspace
-from app.llm.structured import generate_structured
+from app.llm.structured import generate_structured, output_budget, prompt_budget
 from app.services.conversation.memory import session_state
 from app.services.knowledge.ontology import entity_keys
 from app.services.knowledge.service import workspace_lock
@@ -134,14 +135,16 @@ class RoadmapService:
                       if e["family"] in ("prerequisite", "taxonomic", "compositional", "causal", "temporal")
                       and e["source"] in names and e["target"] in names][:150]
         locked = self._locked_summary(prev, only_phase_key)
+        out_tokens = output_budget(self.c.llm, "smart", 4000)
+        material = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1500)
         user = (
             f"Topic: {ws.topic}\nScope: {ws.description or '-'}\nAudience: {ws.audience or '-'} "
             f"({ws.academic_level or '-'})\nTeaching goals: {'; '.join(ws.teaching_goals or []) or '-'}\n"
             f"Teacher familiarity level: {ws.familiarity_level} (0=beginner,1=familiar,2=advanced)\n"
             f"Time available: {ws.time_available_minutes or 'unspecified'} minutes\n"
             f"Language: {ws.language}\n\n"
-            f"Knowledge graph concepts (researched):\n{chr(10).join(graph_lines) or '(no research yet)'}\n\n"
-            f"Key relations:\n{chr(10).join(edge_lines) or '(none)'}\n\n"
+            f"Knowledge graph concepts (researched):\n{chr(10).join(fit_items(graph_lines, int(material * 0.6))) or '(no research yet)'}\n\n"
+            f"Key relations:\n{chr(10).join(fit_items(edge_lines, int(material * 0.4))) or '(none)'}\n\n"
             f"Teacher-locked phases/items to keep unchanged:\n{locked or '(none)'}\n\n"
             f"Teacher instructions: {instructions or '(none)'}"
         )
@@ -154,7 +157,7 @@ class RoadmapService:
         if progress:
             await progress("planning roadmap", 40)
         draft = await generate_structured(self.c.llm, task="roadmap", system=ROADMAP_SYSTEM, user=user,
-                                          schema=RoadmapDraft, tier="smart", max_tokens=4000)
+                                          schema=RoadmapDraft, tier="smart", max_tokens=out_tokens)
         if progress:
             await progress("saving roadmap version", 80)
         index = await self.concept_index(workspace_id)

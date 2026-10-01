@@ -122,9 +122,11 @@ def extract_rules(passages: list[tuple[dict, str]]) -> dict[str, Any]:
 class FakeLLMProvider(LLMProvider):
     name = "fake"
 
-    def __init__(self) -> None:
+    def __init__(self, request_limit: int = 32_000) -> None:
         self.calls: list[dict[str, Any]] = []
         self._scripts: dict[str, list[Any]] = {}
+        # Like Groq, reject any single request whose prompt + max_tokens exceeds this limit.
+        self.request_limit = request_limit
 
     def script(self, task: str, response: dict | str | Callable[[list[ChatMessage]], Any]) -> None:
         """Queue a response for the next call of ``task`` (dict -> JSON)."""
@@ -134,11 +136,18 @@ class FakeLLMProvider(LLMProvider):
         return f"fake-{tier}"
 
     def context_tokens(self, tier: Tier) -> int:
-        return 32_000
+        return self.request_limit
 
     async def complete(self, messages: list[ChatMessage], *, task: str, tier: Tier = "smart", json_mode: bool = False,
                        max_tokens: int | None = None, temperature: float | None = None) -> LLMResult:
-        self.calls.append({"task": task, "tier": tier, "messages": messages})
+        from app.core.errors import ProviderError
+        from app.core.tokens import count_tokens
+
+        requested = sum(count_tokens(m.content) for m in messages) + (max_tokens or 0)
+        self.calls.append({"task": task, "tier": tier, "messages": messages, "requested_tokens": requested})
+        if requested > self.request_limit:
+            raise ProviderError(f"Request too large for '{task}': {requested} > {self.request_limit}",
+                                retryable=False)
         queued = self._scripts.get(task)
         if queued:
             item = queued.pop(0)

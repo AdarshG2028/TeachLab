@@ -20,8 +20,9 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import NotFoundError, ValidationFailed
 from app.core.ids import normalize_key
 from app.core.logging import get_logger
+from app.core.tokens import fit_items
 from app.db.models import Assessment, NotesDocument, Question, Workspace
-from app.llm.structured import UNTRUSTED_POLICY, generate_structured, untrusted
+from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, prompt_budget, untrusted
 from app.services.assessment.blueprint import build_blueprint
 from app.services.assessment.code_runner import run_python_tests
 from app.services.assessment.schemas import (
@@ -203,7 +204,8 @@ class AssessmentService:
         for round_no in range(3):  # initial generation + up to 2 repair rounds
             if not pending:
                 break
-            batches = [pending[i:i + 8] for i in range(0, len(pending), 8)]
+            per_batch = max(1, min(8, self.c.llm.context_tokens("smart") // 2000))
+            batches = [pending[i:i + per_batch] for i in range(0, len(pending), per_batch)]
             for bi, batch in enumerate(batches):
                 if progress:
                     await progress("generating questions" if round_no == 0 else f"repair pass {round_no}",
@@ -238,6 +240,8 @@ class AssessmentService:
     async def _generate_batch(self, ws: Workspace, cfg: AssessmentConfig, batch: list[BlueprintSlot],
                               material: dict, prior_issues: dict[str, list[Issue]],
                               existing: dict[str, GenQuestion]) -> tuple[list[GenQuestion], dict[str, Any]]:
+        out_tokens = output_budget(self.c.llm, "smart", 6000)
+        material_budget = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1500)
         markers: dict[str, Any] = {}
         fact_lines: list[str] = []
         for key in dict.fromkeys(sl.concept_key for sl in batch):
@@ -260,10 +264,11 @@ class AssessmentService:
             f"{STRICT_RULE if cfg.coverage_mode == 'strict' else EXPANDED_RULE}\n"
             f"Teacher instructions: {cfg.custom_instructions or '-'}\n\nSlots:\n" + "\n".join(slot_lines) +
             "\n\nAlready written questions (do not duplicate):\n" + ("\n".join(f"- {o}" for o in others) or "-") +
-            "\n\nFacts:\n" + ("\n".join(fact_lines) or "-") + "\n\nPassages:\n" +
-            "\n\n".join(untrusted("source", p.text, id=m, title=p.title[:100]) for m, p in markers.items()))
+            "\n\nFacts:\n" + ("\n".join(fit_items(fact_lines, int(material_budget * 0.25))) or "-") + "\n\nPassages:\n" +
+            "\n\n".join(fit_items([untrusted("source", p.text, id=m, title=p.title[:100])
+                                    for m, p in markers.items()], int(material_budget * 0.6))))
         out = await generate_structured(self.c.llm, task="questions", system=GEN_SYSTEM, user=user,
-                                        schema=GenQuestionBatch, tier="smart", max_tokens=6000)
+                                        schema=GenQuestionBatch, tier="smart", max_tokens=out_tokens)
         wanted = {sl.slot_id for sl in batch}
         return [q for q in out.questions if q.slot_id in wanted], markers
 

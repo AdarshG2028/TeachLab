@@ -34,7 +34,13 @@ class GroqLLMProvider(LLMProvider):
         return self.settings.llm_model_fast if tier == "fast" else self.settings.llm_model_smart
 
     def context_tokens(self, tier: Tier) -> int:
-        return self.settings.llm_context_tokens_fast if tier == "fast" else self.settings.llm_context_tokens_smart
+        """Largest single request (prompt + completion) we may send.
+
+        Groq rejects any single request larger than the account's tokens-per-minute limit, so the
+        effective budget is min(model context window, LLM_TOKENS_PER_MINUTE).
+        """
+        window = self.settings.llm_context_tokens_fast if tier == "fast" else self.settings.llm_context_tokens_smart
+        return min(window, self.settings.llm_tokens_per_minute)
 
     async def complete(
         self,
@@ -47,9 +53,16 @@ class GroqLLMProvider(LLMProvider):
         temperature: float | None = None,
     ) -> LLMResult:
         model = self.model_for(tier)
-        max_out = max_tokens or self.settings.llm_max_output_tokens
-        estimate = sum(count_tokens(m.content) for m in messages) + max_out // 2
-        await self.bucket.acquire(estimate)
+        cap = self.context_tokens(tier)
+        prompt_tokens = int(sum(count_tokens(m.content) + 4 for m in messages) * 1.1)  # tokenizer mismatch margin
+        max_out = min(max_tokens or self.settings.llm_max_output_tokens, cap - prompt_tokens)
+        if max_out < 300:
+            raise ProviderError(
+                f"LLM request for '{task}' is too large: ~{prompt_tokens} prompt tokens leave no room for output "
+                f"within the {cap}-token per-request limit (LLM_TOKENS_PER_MINUTE={self.settings.llm_tokens_per_minute}"
+                f"). Raise LLM_TOKENS_PER_MINUTE if your Groq plan allows, or reduce the request size.",
+                retryable=False)
+        await self.bucket.acquire(prompt_tokens + max_out)
 
         kwargs: dict = {
             "model": model,
@@ -64,6 +77,8 @@ class GroqLLMProvider(LLMProvider):
             try:
                 resp = await self.client.chat.completions.create(**kwargs)
             except openai.RateLimitError as exc:
+                if _too_large(exc):
+                    raise _too_large_error(self.settings.llm_tokens_per_minute, exc) from exc
                 raise ProviderError("LLM rate limited", retryable=True,
                                     retry_after=_retry_after(exc.response)) from exc
             except (openai.APITimeoutError, openai.APIConnectionError) as exc:
@@ -76,6 +91,8 @@ class GroqLLMProvider(LLMProvider):
                 retry = "json_validate_failed" in str(exc)
                 raise ProviderError(f"LLM rejected request: {exc}", retryable=retry) from exc
             except openai.APIStatusError as exc:
+                if exc.status_code == 413 or _too_large(exc):
+                    raise _too_large_error(self.settings.llm_tokens_per_minute, exc) from exc
                 raise ProviderError(f"LLM error {exc.status_code}: {exc}", retryable=exc.status_code >= 500) from exc
             choice = resp.choices[0]
             usage = LLMUsage(
@@ -96,3 +113,14 @@ def _retry_after(response) -> float | None:
         return float(value) if value else None
     except Exception:
         return None
+
+
+def _too_large(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "request too large" in text or "reduce your message size" in text
+
+
+def _too_large_error(tpm: int, exc: Exception) -> ProviderError:
+    return ProviderError(
+        f"Groq rejected the request as too large for your tokens-per-minute limit. Set LLM_TOKENS_PER_MINUTE "
+        f"(currently {tpm}) to your plan's actual limit. Details: {str(exc)[:300]}", retryable=False)

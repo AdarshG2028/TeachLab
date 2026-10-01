@@ -346,3 +346,25 @@ async def test_grounding_strips_invented_citations_and_urls(client, worker, fake
     msg = await chat(client, worker, wid, sid, "What is a qubit?")
     assert "[S99]" not in msg["content"] and "evil.example" not in msg["content"]
     assert [c["marker"] for c in msg["citations"]] == ["S1"]
+
+
+async def test_full_workflow_fits_small_free_tier_request_limit(client, worker, fake_llm):
+    """With a 6k tokens-per-request budget (Groq free-tier-like), every LLM call must fit."""
+    fake_llm.request_limit = 6000
+    ws = await create_workspace(client, "French Revolution history", level=1)
+    wid = ws["id"]
+    sid = (await client.get(f"/api/workspaces/{wid}/overview")).json()["latest_session_id"]
+    await chat(client, worker, wid, sid, "Please research the French Revolution and the Enlightenment")
+    await run_jobs(worker)
+    await job(client, worker, await client.post(f"/api/workspaces/{wid}/research",
+                                                json={"queries": ["french revolution bastille terror"]}))
+    await job(client, worker, await client.post(f"/api/workspaces/{wid}/roadmap/generate", json={}))
+    await job(client, worker, await client.post(f"/api/workspaces/{wid}/notes/generate", json={"kind": "teacher"}))
+    r = await client.post(f"/api/workspaces/{wid}/assessments", json={
+        "title": "Small budget", "question_types": ["mcq", "short_answer", "long_answer"], "num_questions": 9})
+    await job(client, worker, r)
+    for i in range(4):
+        await chat(client, worker, wid, sid, f"Explain the Reign of Terror in more depth, part {i}. " + "context " * 60)
+    assert fake_llm.calls and max(c["requested_tokens"] for c in fake_llm.calls) <= 6000
+    tasks = {c["task"] for c in fake_llm.calls}
+    assert {"extract", "plan_turn", "answer", "roadmap", "questions", "summarize"} <= tasks

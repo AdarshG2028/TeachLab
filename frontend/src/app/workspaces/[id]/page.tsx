@@ -30,6 +30,11 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
     Api.overview(id).then(setOv).catch(setError);
   }, [id]);
   useEffect(() => refresh(), [refresh]);
+  // Deep links: /workspaces/<id>?tab=graph
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested && TABS.some(([key]) => key === requested)) setTab(requested as Tab);
+  }, []);
 
   if (error) return <ErrorText error={error} />;
   if (!ov) return <p className="text-sm text-slate-500">Loading…</p>;

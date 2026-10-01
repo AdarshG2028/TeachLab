@@ -40,3 +40,18 @@ def truncate_to_tokens(text: str, max_tokens: int) -> str:
     if len(ids) <= max_tokens:
         return text
     return enc.decode(ids[:max_tokens])
+
+
+def fit_items(items: list[str], budget: int) -> list[str]:
+    """Keep items in order while their total token count fits ``budget`` (always keeps at least one, truncated)."""
+    out: list[str] = []
+    used = 0
+    for it in items:
+        t = count_tokens(it)
+        if used + t > budget:
+            if not out and budget > 50:
+                out.append(truncate_to_tokens(it, budget))
+            break
+        out.append(it)
+        used += t
+    return out

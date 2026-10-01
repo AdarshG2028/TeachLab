@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tokens import count_tokens
+from app.core.tokens import count_tokens, fit_items
 from app.db.models import Message, ResearchSession
-from app.llm.structured import generate_structured
+from app.llm.structured import generate_structured, prompt_budget
 from app.providers.llm.base import LLMProvider
 
 DEFAULT_STATE: dict[str, Any] = {
@@ -65,7 +65,11 @@ async def maybe_summarize(s: AsyncSession, llm: LLMProvider, sess: ResearchSessi
     ).order_by(Message.seq))).scalars().all()
     if sum(m.token_estimate for m in pending) < trigger_tokens:
         return False
-    transcript = "\n".join(f"[{m.role}] {m.content[:3000]}" for m in pending)
+    lines = [f"[{m.role}] {m.content[:3000]}" for m in pending]
+    budget = prompt_budget(llm, "fast", 900, overhead=600 + count_tokens(sess.rolling_summary or ""))
+    kept = fit_items(lines, budget)
+    pending = pending[: len(kept)]  # fold only what fits; the remainder is folded on a later turn
+    transcript = "\n".join(kept)
     out = await generate_structured(
         llm, task="summarize", system=SUMMARY_SYSTEM,
         user=f"Previous summary:\n{sess.rolling_summary or '(none)'}\n\nNew messages:\n{transcript}",

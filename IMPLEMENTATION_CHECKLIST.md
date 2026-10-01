@@ -14,6 +14,7 @@ Legend:
 
 ## Phase 2: Providers
 - ✅ Groq via the OpenAI SDK: tier routing, JSON mode, token-bucket throttle, retry-after handling, error mapping (`tests/unit/test_providers.py`)
+- ✅ Request size capped to `LLM_TOKENS_PER_MINUTE`: budgets shrink to fit, oversized requests fail with a clear message, and the whole workflow is tested at a 6K per-request limit (`test_full_workflow_fits_small_free_tier_request_limit`)
 - ✅ Tavily search and extract over REST, with retries and quota errors (mocked HTTP tests). ⚠️ Not live-tested: no key was available.
 - ✅ SSRF-safe fetcher, HTML (trafilatura) and PDF (pypdf) extraction, upload validation (`tests/unit/test_io_safety_and_pdf.py`)
 - ✅ Deterministic chunking, URL canonicalization, content-hash deduplication
@@ -23,7 +24,7 @@ Legend:
 ## Phase 3: Knowledge graph
 - ✅ Neo4j constraints and indexes, parameterized Cypher only, allowlisted labels, generic `:REL` edges
 - ✅ LLM extraction with a schema and repair loop; raw extractions stored in PostgreSQL
-- ✅ Ontology resolver covering entities, relations, validation and new types (`tests/unit/test_ontology.py`, 30 tests):
+- ✅ Ontology resolver covering entities, relations, validation and new types (`tests/unit/test_ontology.py`, 34 tests):
   - entity normalization, aliases and acronyms
   - fuzzy duplicate and homonym proposals
   - relation synonyms, inverse phrases and passive voice
@@ -70,6 +71,14 @@ Legend:
 ## Phase 8: Hardening and docs
 - ✅ Durable jobs: retries with backoff, non-retryable failures, lease recovery, idempotency keys, worker re-checks of ownership
 - ✅ Security tests: cross-user access (404 on every route family), SSRF, uploads, production guards
-- ✅ README, ARCHITECTURE, DEPLOYMENT, Dockerfiles, demo script (`backend/scripts/demo_workflow.py`)
+- ✅ README, ARCHITECTURE, DEPLOYMENT, demo script (`backend/scripts/demo_workflow.py`)
+- ⚠️ Dockerfiles are written but `docker build` was never run. The lockfile pins CPU-only torch on Linux, with no CUDA packages.
+- ✅ Smoke-tested as separate processes (uvicorn + worker + `next start`, server Qdrant): chat turn over SSE, CORS, follow-up graph job, cross-user 404.
+- ✅ UI rendered in headless Edge: home, chat, roadmap, knowledge graph, notes (KaTeX), tests. ⚠️ Interactive clicks (form submits, edits) were not exercised in a browser; the API paths behind them are covered by integration tests.
 - ⏭️ Live Groq/Tavily runs: no keys in this environment. Run `uv run pytest -m live tests/live` and `scripts/demo_workflow.py --live` after adding keys.
-- ⏭️ Browser E2E (Playwright): not added. Browser downloads were impractical on this network, so the UI is covered by type checks, vitest and a production build, and the full workflow is verified through the API.
+- ⏭️ Automated browser E2E (Playwright): not added, because browser downloads were impractical on this network. Screenshots were checked manually instead (see above).
+
+## Verified results (last run)
+- Backend: `uv run pytest`: **105 passed**, 5 live tests deselected. `uv run pytest -m live`: 5 skipped (no keys). `ruff`: clean.
+- Frontend: `pnpm test`: **5 passed**. `tsc --noEmit`: clean. `next build`: succeeded.
+- Offline demo (`scripts/demo_workflow.py`, levels 0 and 1): every step succeeded and wrote 5 PDFs.

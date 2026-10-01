@@ -20,7 +20,7 @@ from app.core.ids import normalize_key, sha256_text
 from app.core.logging import get_logger
 from app.db.models import Message, Preference, ResearchSession, SearchCache, Workspace
 from app.jobs.queue import enqueue
-from app.llm.structured import UNTRUSTED_POLICY, generate_structured
+from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget
 from app.providers.search.base import SearchHit
 from app.services.conversation.context import ContextInputs, build_context, make_budget
 from app.services.conversation.memory import append_message, maybe_summarize, session_state, unsummarized_messages
@@ -282,13 +282,14 @@ class ResearchAgent:
                                                                                                     "assistant")],
         )
         tier = "smart"
-        built = build_context(inputs, make_budget(self.c.llm.context_tokens(tier), 2500,
+        answer_tokens = output_budget(self.c.llm, tier, 2500)
+        built = build_context(inputs, make_budget(self.c.llm.context_tokens(tier), answer_tokens + 400,
                                                   self.settings.context_budget_ratio))
         if progress:
             await progress("writing answer", 75)
         answer = await generate_structured(
             self.c.llm, task="answer", system=built.messages[0]["content"],
-            user=self._flatten_history(built.messages[1:]), schema=AnswerOutput, tier=tier, max_tokens=2500)
+            user=self._flatten_history(built.messages[1:]), schema=AnswerOutput, tier=tier, max_tokens=answer_tokens)
 
         text, citations = self._ground(answer, {m: markers[m] for m in built.included_passages})
         meta = {

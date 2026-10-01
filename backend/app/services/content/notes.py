@@ -19,8 +19,9 @@ from sqlalchemy import select, update
 from app.core.errors import NotFoundError, ValidationFailed
 from app.core.ids import new_id
 from app.core.logging import get_logger
+from app.core.tokens import fit_items
 from app.db.models import NotesDocument, ResearchSession, Source, Workspace
-from app.llm.structured import UNTRUSTED_POLICY, generate_structured, untrusted
+from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, prompt_budget, untrusted
 from app.services.knowledge.service import workspace_lock
 
 if TYPE_CHECKING:
@@ -163,6 +164,11 @@ class NotesService:
                           if r is not None and getattr(r, f"{st}_at")]
                 fb = f"; teacher self-reported: {r.self_reported_understanding}" if r and r.self_reported_understanding else ""
                 cov_lines.append(f"- {cpt['name']}: {', '.join(stages) or 'planned only'}{fb}")
+            out_tokens = output_budget(self.c.llm, "smart", 4000)
+            material = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1400)
+            fact_lines = [f"- {f['text']} [status: {f['status']}]" + (
+                f" [perspective: {'; '.join(f['perspectives'])}]" if f.get("perspectives") else "") for f in facts]
+            passage_blocks = [untrusted("source", p["text"], id=m, title=p["title"][:120]) for m, p in markers.items()]
             user = (
                 f"Course topic: {ws.topic}\nSection {si + 1} of {len(outline)}: {sec['title']}\n"
                 f"Section objectives: {'; '.join(sec.get('objectives') or []) or '-'}\n"
@@ -172,17 +178,14 @@ class NotesService:
                     for c in sec["concepts"]) +
                 f"\n\nCoverage so far (what the teacher researched/discussed):\n{chr(10).join(cov_lines)}\n"
                 f"Conversation summaries:\n{convo or '-'}\n\n"
-                "Knowledge-graph facts:\n" + "\n".join(
-                    f"- {f['text']} [status: {f['status']}]" + (f" [perspective: {'; '.join(f['perspectives'])}]"
-                                                                if f.get('perspectives') else "") for f in facts) +
-                "\n\nSource passages:\n" + "\n\n".join(
-                    untrusted("source", p["text"], id=m, title=p["title"][:120]) for m, p in markers.items()) +
+                "Knowledge-graph facts:\n" + "\n".join(fit_items(fact_lines, int(material * 0.3))) +
+                "\n\nSource passages:\n" + "\n\n".join(fit_items(passage_blocks, int(material * 0.7))) +
                 f"\n\nOptions: exercises={cfg.include_exercises}, misconceptions={cfg.include_misconceptions}, "
                 f"discussion_prompts={cfg.include_discussion_prompts}.\n"
                 f"Extra teacher instructions: {cfg.extra_instructions or '-'}"
             )
             out = await generate_structured(self.c.llm, task=f"notes_section_{cfg.kind}", system=system, user=user,
-                                            schema=SectionOut, tier="smart", max_tokens=4000)
+                                            schema=SectionOut, tier="smart", max_tokens=out_tokens)
             md, used_sources = self._compose(out, cfg, markers, ref_numbers)
             covered_keys = [c["key"] for c in sec["concepts"]]
             all_concepts += covered_keys

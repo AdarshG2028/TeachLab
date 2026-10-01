@@ -20,6 +20,7 @@ from app.core.ids import sha256_text
 from app.core.logging import get_logger
 from app.db.models import Chunk, CoverageRecord, Extraction, OntologyProposal, RelationType, Source
 from app.db.session import Database
+from app.llm.structured import prompt_budget
 from app.providers.graph.neo4j_store import Neo4jGraphStore
 from app.providers.llm.base import LLMProvider
 from app.services.knowledge.extractor import PROMPT_VERSION, Passage, batch_passages, extract_candidates
@@ -66,7 +67,8 @@ class KnowledgeService:
                     for c in chunks]
         ids: list[str] = []
         model = self.llm.model_for("fast")
-        for batch in batch_passages(passages, self.batch_tokens):
+        budget = min(self.batch_tokens, prompt_budget(self.llm, "fast", 2500, overhead=1200))
+        for batch in batch_passages(passages, budget):
             for i, p in enumerate(batch, start=1):
                 p.pid = f"P{i}"
             chunk_ids = [p.chunk_id for p in batch]

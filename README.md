@@ -128,3 +128,5 @@ Authentication is local and header-based in this MVP. `AUTH_PROVIDER=local` take
 * **Difficulty.** Difficulty matching is heuristic: the model's own rating is compared with the blueprint and mismatches are flagged.
 * **Contradiction detection.** This is rule-based: an explicit negation of the same relation, or single-valued relations with conflicting objects. Subtler disagreements depend on the extraction model marking perspectives.
 * **Chat responses.** Chat replies are delivered when the turn finishes, with progress reported per step over SSE. Token streaming is not implemented.
+* **Not verified here.** Docker images were written but not built. The UI was rendered in headless Edge but its interactive flows weren't clicked through in a browser. Live Groq/Tavily calls were not run.
+* **Request size.** Each LLM request is capped at `LLM_TOKENS_PER_MINUTE`, since Groq rejects any single request above the plan's TPM. With the conservative default of 6000, prompts carry fewer passages per call. Raise it to your plan's real limit for richer context.

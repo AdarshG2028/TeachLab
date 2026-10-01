@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -147,3 +148,59 @@ async def test_code_runner_pass_fail_timeout():
     assert not bad.passed and "AssertionError" in bad.output
     slow = await run_python_tests("while True:\n    pass", "", timeout=1.5)
     assert slow.timed_out and not slow.passed
+
+
+def small_groq(handler, tpm: int) -> GroqLLMProvider:
+    client = AsyncOpenAI(api_key="k", base_url="https://api.groq.test/openai/v1", max_retries=0,
+                         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    return GroqLLMProvider(Settings(env="test", groq_api_key="k", llm_tokens_per_minute=tpm, llm_max_retries=2),
+                           client=client)
+
+
+async def test_request_is_capped_to_tokens_per_minute():
+    seen = []
+
+    def handler(req):
+        seen.append(json.loads(req.content))
+        return httpx.Response(200, json=completion("ok"))
+
+    llm = small_groq(handler, tpm=3000)
+    assert llm.context_tokens("smart") == 3000  # budgets downstream shrink accordingly
+    await llm.complete([ChatMessage("user", "word " * 1000)], task="t", max_tokens=4000)
+    sent = seen[0]
+    assert sent["max_tokens"] <= 3000 - 1000  # output shrunk so prompt + output fit one request
+    with pytest.raises(ProviderError) as e:
+        await llm.complete([ChatMessage("user", "word " * 2900)], task="t", max_tokens=1000)
+    assert "LLM_TOKENS_PER_MINUTE" in e.value.message and not e.value.retryable
+    assert len(seen) == 1  # the oversized request was never sent
+
+
+async def test_groq_request_too_large_error_is_explained():
+    def handler(req):
+        return httpx.Response(413, json={"error": {"message": "Request too large for model: Limit 6000, Requested 9000",
+                                                   "type": "tokens", "code": "rate_limit_exceeded"}})
+
+    with pytest.raises(ProviderError) as e:
+        await small_groq(handler, tpm=50_000).complete([ChatMessage("user", "x")], task="t")
+    assert "LLM_TOKENS_PER_MINUTE" in e.value.message and not e.value.retryable
+
+
+def test_budget_helpers_shrink_with_small_caps():
+    from app.core.tokens import count_tokens, fit_items
+    from app.llm.structured import output_budget, prompt_budget
+
+    llm = small_groq(lambda r: httpx.Response(200, json=completion("ok")), tpm=6000)
+    assert output_budget(llm, "smart", 6000) == 3000
+    assert prompt_budget(llm, "smart", 3000, overhead=1500) == 600
+    items = ["passage text " * 100] * 10
+    kept = fit_items(items, 900)
+    assert sum(count_tokens(i) for i in kept) <= 900 and len(kept) >= 1
+    assert fit_items(["x " * 5000], 200) and count_tokens(fit_items(["x " * 5000], 200)[0]) <= 200
+
+
+async def test_token_bucket_clamps_oversized_amounts():
+    from app.core.retry import TokenBucket
+
+    bucket = TokenBucket(100, clock=lambda: 0.0)
+    await asyncio.wait_for(bucket.acquire(10_000), timeout=1)  # clamped to capacity, does not deadlock
+    assert bucket.tokens == 0

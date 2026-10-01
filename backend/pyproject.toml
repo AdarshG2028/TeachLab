@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.28",
     "openai>=1.55",
     "sentence-transformers>=3.3",
+    "torch>=2.5",
     "qdrant-client>=1.12",
     "neo4j>=5.26",
     "trafilatura>=2.0",
@@ -45,6 +46,16 @@ dev = [
 
 [tool.uv]
 package = false
+
+# CPU-only torch on Linux (Docker/servers). PyPI's Linux wheels pull multi-GB CUDA packages;
+# Windows/macOS PyPI wheels are already CPU builds.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

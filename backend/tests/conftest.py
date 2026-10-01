@@ -71,6 +71,7 @@ async def clean_state(request) -> AsyncIterator[None]:
     if isinstance(fake, FakeLLMProvider):
         fake.calls.clear()
         fake._scripts.clear()
+        fake.request_limit = 32_000
 
 
 @pytest.fixture
