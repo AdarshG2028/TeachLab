@@ -30,8 +30,13 @@ def _tags(label: str, text: str) -> list[tuple[dict[str, str], str]]:
 
 
 def _sentences(text: str) -> list[str]:
-    flat = " ".join(line.strip("#*- ") for line in text.splitlines() if line.strip())
-    return [s.strip() for s in _SENT.split(flat) if len(s.strip()) > 20]
+    out: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):  # headings are not sentences
+            continue
+        out.extend(s.strip() for s in _SENT.split(line.strip("*- ")) if len(s.strip()) > 20)
+    return out
 
 
 def _relation_phrases() -> list[str]:

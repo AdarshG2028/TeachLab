@@ -60,10 +60,10 @@ def paper_sections(views: list[StudentQuestionView], bp: Blueprint) -> list[Docu
             lines.append(f"*{meta.instructions}*")
         for q in qs:
             block = f"**Q{q.number}.** {q.text}  \n*[{_fmt_marks(q.marks)}]*"
-            if q.type == "mcq":
-                block += "\n\n" + "\n".join(f"- ({chr(65 + i)}) {c}" for i, c in enumerate(q.choices))
+            if q.type == "mcq":  # options as stacked lines (hard breaks), not bullets
+                block += "\n\n" + "  \n".join(f"({chr(65 + i)}) {c}" for i, c in enumerate(q.choices))
             elif q.type == "true_false":
-                block += "\n\n- True\n- False"
+                block += "\n\n(A) True  \n(B) False"
             elif q.type in ("short_answer", "numerical"):
                 block += "\n\n" + "\\_" * 60
             lines.append(block)

@@ -35,3 +35,6 @@ next-env.d.ts
 Thumbs.db
 .idea/
 .vscode/
+demo_output/
+next_build.log
+frontend_install.log

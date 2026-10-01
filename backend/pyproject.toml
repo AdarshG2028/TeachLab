@@ -37,6 +37,7 @@ otel = [
 
 [dependency-groups]
 dev = [
+    "pypdfium2>=5.13.0",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
