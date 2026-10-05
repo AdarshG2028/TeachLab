@@ -53,19 +53,21 @@ class Settings(BaseSettings):
     llm_provider: str = "groq"  # groq | fake (fake only allowed outside production)
     groq_api_key: str | None = None
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    llm_model_smart: str = "llama-3.3-70b-versatile"
-    llm_model_fast: str = "llama-3.1-8b-instant"
+    llm_model_smart: str = "openai/gpt-oss-120b"
+    llm_model_fast: str = "openai/gpt-oss-20b"
     llm_context_tokens_smart: int = 32_000
     llm_context_tokens_fast: int = 32_000
     llm_max_output_tokens: int = 4_096
-    llm_tokens_per_minute: int = 6_000
+    llm_tokens_per_minute: int = 8_000
+    llm_reasoning_effort: str | None = "low"  # sent only to reasoning models (gpt-oss); low keeps JSON within budget
     llm_max_retries: int = 4
     llm_timeout_seconds: float = 90.0
     llm_temperature: float = 0.3
 
     # --- Search (Tavily) ---
-    search_provider: str = "tavily"  # tavily | fixture (fixture only outside production)
+    search_provider: str = "tavily"  # tavily | exa | fixture (fixture only outside production)
     tavily_api_key: str | None = None
+    exa_api_key: str | None = None
     search_max_results: int = 5
     search_cache_ttl_hours: int = 72
     search_fixture_dir: Path = BACKEND_DIR / "tests" / "fixtures" / "search"

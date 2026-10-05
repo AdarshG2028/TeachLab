@@ -72,6 +72,7 @@ Verify current limits; free tiers change.
   * The client throttles to `LLM_TOKENS_PER_MINUTE` and honors `retry-after`; jobs retry with backoff.
   * Use the fast model for extraction and summaries, and the larger model for answers, roadmaps, notes and questions.
   * Expect large research sessions to be rate-limited. They then complete more slowly rather than failing.
+* **Exa** (default search). Free credits at sign-up; each search with page text uses credits, and results are cached per workspace for `SEARCH_CACHE_TTL_HOURS`.
 * **Tavily.** The free plan has a monthly credit allowance. Searches use `search_depth=basic` with `include_raw_content`, which usually avoids separate extract calls. Results are cached per workspace for `SEARCH_CACHE_TTL_HOURS`, and the agent skips searching when local knowledge is sufficient.
 * **Neo4j AuraDB Free.** Node and relationship caps (on the order of 200k nodes / 400k relationships at the time of writing). Free instances pause after inactivity and may be deleted after a long idle period; keep PostgreSQL as the system of record and rebuild the graph when needed. Each claim adds about 1 Claim node plus one Evidence node per supporting chunk.
 * **Qdrant Cloud free.** About 1 GB of storage. At 384 dimensions with payloads, that's on the order of hundreds of thousands of chunks.

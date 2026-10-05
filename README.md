@@ -2,7 +2,7 @@
 
 An AI research workspace for teachers. A teacher researches a subject, and the system builds a source-backed knowledge graph from the research. It adapts to how familiar the teacher is with the subject, and produces teaching roadmaps, teacher and student notes, validated test papers, answer keys and PDFs from what was actually researched.
 
-* **Backend:** FastAPI, PostgreSQL, Neo4j, Qdrant, and local BGE embeddings. Groq is the LLM, Tavily is the search API, and PDFs are rendered locally with ReportLab.
+* **Backend:** FastAPI, PostgreSQL, Neo4j, Qdrant, and local BGE embeddings. Groq is the LLM, Exa or Tavily is the web search API, and PDFs are rendered locally with ReportLab.
 * **Frontend:** Next.js, React, TypeScript and Tailwind. This is a functional, replaceable interface that covers the whole workflow.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment and free-tier notes, and [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) for status.
@@ -19,7 +19,7 @@ backend/                 FastAPI app, worker, migrations, tests (uv project, Pyt
   app/db/                SQLAlchemy models (PostgreSQL = source of truth), sessions
   app/jobs/, app/worker/ durable PostgreSQL job queue + worker process + job handlers
   app/llm/               structured (JSON-schema validated) generation, prompt-injection wrapping
-  app/providers/         LLM (Groq, fake), search (Tavily, fixtures), embeddings (BGE), vector (Qdrant),
+  app/providers/         LLM (Groq, fake), search (Exa, Tavily, fixtures), embeddings (BGE), vector (Qdrant),
                          graph (Neo4j), PDF (ReportLab), storage (local FS)
   app/services/          research agent, ingestion, retrieval, knowledge (extraction + ontology),
                          conversation memory, roadmap + coverage/gaps, notes, assessment, export
@@ -83,7 +83,7 @@ The demo creates a topic and runs research, the graph update, the roadmap, the L
 ```bash
 cd backend
 uv run python scripts/demo_workflow.py --topic "quantum computing qubits" --level 0      # offline
-uv run python scripts/demo_workflow.py --live --topic "Photosynthesis" --level 1          # Groq + Tavily
+uv run python scripts/demo_workflow.py --live --topic "Photosynthesis" --level 1          # Groq + Exa/Tavily
 # PDFs: backend/demo_output/<workspace-id>/{teacher_notes,student_notes,question_paper,answer_key,student_pack}.pdf
 ```
 
@@ -94,7 +94,7 @@ cd backend
 docker compose up -d                       # integration tests use the teachlab_test database + Neo4j
 uv run pytest                              # unit + integration (live tests excluded by default)
 uv run pytest -m nodb                      # only pure unit tests (no services needed)
-uv run pytest -m live tests/live           # real Groq/Tavily calls; skipped when keys are missing
+uv run pytest -m live tests/live           # real Groq/Exa/Tavily calls; skipped when keys are missing
 uv run ruff check app tests
 
 cd ../frontend
@@ -109,8 +109,9 @@ Integration tests run against the docker-compose PostgreSQL (`teachlab_test`) an
 
 | Variable | Where to get it | Notes |
 |---|---|---|
-| `GROQ_API_KEY` | https://console.groq.com/keys | Free tier. Check https://console.groq.com/docs/models for current model IDs and rate limits, and set `LLM_MODEL_SMART`, `LLM_MODEL_FAST` and `LLM_TOKENS_PER_MINUTE` to match. |
-| `TAVILY_API_KEY` | https://app.tavily.com | The free plan includes a monthly credit allowance. Each search and extract call uses credits, and results are cached per workspace (`SEARCH_CACHE_TTL_HOURS`). |
+| `GROQ_API_KEY` | https://console.groq.com/keys | Free tier. Defaults are `openai/gpt-oss-120b` (smart) and `openai/gpt-oss-20b` (fast), since new free accounts may not have Llama models. List what your key can use with `GET https://api.groq.com/openai/v1/models`. Set `LLM_TOKENS_PER_MINUTE` to your plan's limit (free tier ≈ 8000). |
+| `EXA_API_KEY` (with `SEARCH_PROVIDER=exa`) | https://dashboard.exa.ai/api-keys | Default search provider. Free credits at sign-up. Results are cached per workspace (`SEARCH_CACHE_TTL_HOURS`). |
+| `TAVILY_API_KEY` (with `SEARCH_PROVIDER=tavily`) | https://app.tavily.com | Alternative search provider with a monthly free credit allowance. |
 | `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` | Local docker, or [Neo4j AuraDB Free](https://neo4j.com/cloud/aura-free/) | AuraDB URI format: `neo4j+s://<id>.databases.neo4j.io`. |
 | `QDRANT_URL` / `QDRANT_API_KEY` | Local docker, or [Qdrant Cloud](https://cloud.qdrant.io) free cluster | Leave `QDRANT_URL` empty to use embedded mode (`QDRANT_PATH`). |
 | `DATABASE_URL` | Local docker, or any PostgreSQL 14+ (Neon, Supabase, RDS…) | Must use the `postgresql+asyncpg://` scheme. |
@@ -129,4 +130,4 @@ Authentication is local and header-based in this MVP. `AUTH_PROVIDER=local` take
 * **Contradiction detection.** This is rule-based: an explicit negation of the same relation, or single-valued relations with conflicting objects. Subtler disagreements depend on the extraction model marking perspectives.
 * **Chat responses.** Chat replies are delivered when the turn finishes, with progress reported per step over SSE. Token streaming is not implemented.
 * **Not verified here.** Docker images were written but not built. The UI was rendered in headless Edge but its interactive flows weren't clicked through in a browser. Live Groq/Tavily calls were not run.
-* **Request size.** Each LLM request is capped at `LLM_TOKENS_PER_MINUTE`, since Groq rejects any single request above the plan's TPM. With the conservative default of 6000, prompts carry fewer passages per call. Raise it to your plan's real limit for richer context.
+* **Request size.** Each LLM request is capped at `LLM_TOKENS_PER_MINUTE`, since Groq rejects any single request above the plan's TPM. With the free-tier default of 8000, prompts carry fewer passages per call. Raise it to your plan's real limit for richer context.

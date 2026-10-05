@@ -21,6 +21,7 @@ S = Settings()
 
 needs_groq = pytest.mark.skipif(not S.groq_api_key, reason="GROQ_API_KEY not set")
 needs_tavily = pytest.mark.skipif(not S.tavily_api_key, reason="TAVILY_API_KEY not set")
+needs_exa = pytest.mark.skipif(not S.exa_api_key, reason="EXA_API_KEY not set")
 
 
 @needs_groq
@@ -50,5 +51,14 @@ async def test_groq_turn_plan():
 @needs_tavily
 async def test_tavily_search_returns_content():
     hits = await TavilySearchProvider(S).search("Bloch sphere qubit representation", max_results=3)
+    assert hits and all(h.url.startswith("http") for h in hits)
+    assert any(len(h.content) > 200 for h in hits)
+
+
+@needs_exa
+async def test_exa_search_returns_content():
+    from app.providers.search.exa import ExaSearchProvider
+
+    hits = await ExaSearchProvider(S).search("Bloch sphere qubit representation", max_results=3)
     assert hits and all(h.url.startswith("http") for h in hits)
     assert any(len(h.content) > 200 for h in hits)

@@ -10,7 +10,7 @@
                                │
       ┌───────────────┬────────┼──────────────┬───────────────┬──────────────┐
       ▼               ▼        ▼              ▼               ▼              ▼
-   Groq LLM      Tavily     BGE (local)    Qdrant         Neo4j          PostgreSQL
+   Groq LLM    Exa/Tavily   BGE (local)    Qdrant         Neo4j          PostgreSQL
  (OpenAI API)   search/extract embeddings  vectors        knowledge     source of truth
                                            (per-workspace graph          (+ artifacts in
                                             filter)       (claims/evidence) file storage)

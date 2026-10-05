@@ -72,6 +72,9 @@ class GroqLLMProvider(LLMProvider):
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        if self.settings.llm_reasoning_effort and "gpt-oss" in model:
+            # reasoning tokens count against max_tokens; keep them small so structured output is not truncated
+            kwargs["reasoning_effort"] = self.settings.llm_reasoning_effort
 
         async def _call() -> LLMResult:
             try:

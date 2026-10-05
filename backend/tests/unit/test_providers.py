@@ -1,4 +1,4 @@
-"""Groq and Tavily providers against mocked HTTP: request shape, error mapping, retries."""
+"""Groq, Tavily and Exa providers against mocked HTTP: request shape, error mapping, retries."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from app.core.errors import ConfigurationError, ProviderError
 from app.llm.structured import generate_structured
 from app.providers.llm.base import ChatMessage
 from app.providers.llm.groq import GroqLLMProvider
+from app.providers.search.exa import ExaSearchProvider
 from app.providers.search.tavily import TavilySearchProvider
 from app.services.knowledge.schemas import ExtractionResult
 
@@ -48,10 +49,11 @@ async def test_groq_request_shape_and_tier_routing():
     out = await generate_structured(llm, task="extract", system="s", user="u", schema=ExtractionResult, tier="fast")
     assert out.entities == []
     body = seen[0]
-    assert body["model"] == "llama-3.1-8b-instant" and body["response_format"] == {"type": "json_object"}
+    assert body["model"] == "openai/gpt-oss-20b" and body["response_format"] == {"type": "json_object"}
     assert body["messages"][0]["role"] == "system" and "JSON Schema" in body["messages"][0]["content"]
     await llm.complete([ChatMessage("user", "hi")], task="answer", tier="smart")
-    assert seen[1]["model"] == "llama-3.3-70b-versatile" and "response_format" not in seen[1]
+    assert seen[1]["model"] == "openai/gpt-oss-120b" and "response_format" not in seen[1]
+    assert seen[1]["reasoning_effort"] == "low"  # reasoning models get a small reasoning budget
 
 
 async def test_groq_rate_limit_is_retried_with_retry_after(monkeypatch):
@@ -204,3 +206,63 @@ async def test_token_bucket_clamps_oversized_amounts():
     bucket = TokenBucket(100, clock=lambda: 0.0)
     await asyncio.wait_for(bucket.acquire(10_000), timeout=1)  # clamped to capacity, does not deadlock
     assert bucket.tokens == 0
+
+
+def exa_with(handler) -> ExaSearchProvider:
+
+    client = httpx.AsyncClient(base_url="https://api.exa.ai", transport=httpx.MockTransport(handler))
+    return ExaSearchProvider(Settings(env="test", exa_api_key="exa-key", llm_max_retries=3), client=client)
+
+
+async def test_exa_search_and_contents(monkeypatch):
+    async def no_sleep(d):
+        return None
+
+    monkeypatch.setattr("app.core.retry.asyncio.sleep", no_sleep)
+    seen = []
+    state = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert req.headers["x-api-key"] == "exa-key"
+        body = json.loads(req.content)
+        seen.append((req.url.path, body))
+        if req.url.path == "/search":
+            state["n"] += 1
+            if state["n"] == 1:
+                return httpx.Response(429, headers={"retry-after": "1"})
+            return httpx.Response(200, json={"requestId": "r", "results": [
+                {"url": "https://a.edu/q", "title": "Qubits", "publishedDate": "2024-02-01T00:00:00.000Z",
+                 "text": "A qubit is represented using the Bloch sphere. " * 10},
+                {"url": "https://b.org/x", "title": "B", "text": "short", "highlights": ["key snippet"]},
+                {"title": "no url"}]})
+        return httpx.Response(200, json={"results": [{"url": "https://a.edu/q", "title": "Q", "text": "page text"},
+                                                     {"url": "https://bad.example", "text": ""}],
+                                         "statuses": [{"id": "https://bad.example", "status": "error"}]})
+
+    exa = exa_with(handler)
+    hits = await exa.search("qubit bloch sphere", max_results=3)
+    assert [h.url for h in hits] == ["https://a.edu/q", "https://b.org/x"]
+    assert hits[0].score > hits[1].score and "Bloch sphere" in hits[0].content
+    assert hits[0].published_date.startswith("2024-02-01") and hits[1].snippet == "key snippet"
+    body = seen[-1][1]
+    assert body["numResults"] == 3 and body["contents"]["text"]["maxCharacters"] > 0
+    pages = await exa.extract(["https://a.edu/q", "https://bad.example"])
+    assert [p.url for p in pages] == ["https://a.edu/q"]
+
+
+@pytest.mark.parametrize("status,retryable", [(401, False), (402, False), (503, True)])
+async def test_exa_error_mapping(monkeypatch, status, retryable):
+    async def no_sleep(d):
+        return None
+
+    monkeypatch.setattr("app.core.retry.asyncio.sleep", no_sleep)
+    with pytest.raises(ProviderError) as e:
+        await exa_with(lambda req: httpx.Response(status, json={"error": "x"})).search("x")
+    assert e.value.retryable is retryable
+
+
+def test_container_selects_exa(tmp_path):
+    from app.container import Container
+
+    c = Container(Settings(env="test", search_provider="exa", exa_api_key="k", storage_dir=tmp_path))
+    assert isinstance(c.search, ExaSearchProvider)

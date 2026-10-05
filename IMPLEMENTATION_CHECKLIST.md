@@ -15,7 +15,8 @@ Legend:
 ## Phase 2: Providers
 - ✅ Groq via the OpenAI SDK: tier routing, JSON mode, token-bucket throttle, retry-after handling, error mapping (`tests/unit/test_providers.py`)
 - ✅ Request size capped to `LLM_TOKENS_PER_MINUTE`: budgets shrink to fit, oversized requests fail with a clear message, and the whole workflow is tested at a 6K per-request limit (`test_full_workflow_fits_small_free_tier_request_limit`)
-- ✅ Tavily search and extract over REST, with retries and quota errors (mocked HTTP tests). ⚠️ Not live-tested: no key was available.
+- ✅ Exa (default) and Tavily search providers over REST, with retries and quota errors (mocked HTTP tests). ⚠️ Search not live-tested yet: waiting for an Exa key.
+- ✅ Groq live-tested with the user's key: 4 live tests pass on `openai/gpt-oss-120b` / `openai/gpt-oss-20b`, covering extraction for three subjects with verified quotes, and turn planning.
 - ✅ SSRF-safe fetcher, HTML (trafilatura) and PDF (pypdf) extraction, upload validation (`tests/unit/test_io_safety_and_pdf.py`)
 - ✅ Deterministic chunking, URL canonicalization, content-hash deduplication
 - ✅ Local BGE embeddings: singleton per process, normalized, query instruction, CPU (measured RAM and latency in `docs/DEPLOYMENT.md`)
@@ -75,7 +76,7 @@ Legend:
 - ⚠️ Dockerfiles are written but `docker build` was never run. The lockfile pins CPU-only torch on Linux, with no CUDA packages.
 - ✅ Smoke-tested as separate processes (uvicorn + worker + `next start`, server Qdrant): chat turn over SSE, CORS, follow-up graph job, cross-user 404.
 - ✅ UI rendered in headless Edge: home, chat, roadmap, knowledge graph, notes (KaTeX), tests. ⚠️ Interactive clicks (form submits, edits) were not exercised in a browser; the API paths behind them are covered by integration tests.
-- ⏭️ Live Groq/Tavily runs: no keys in this environment. Run `uv run pytest -m live tests/live` and `scripts/demo_workflow.py --live` after adding keys.
+- ⏭️ Live search runs: waiting for an Exa key. Run `uv run pytest -m live tests/live` and `scripts/demo_workflow.py --live` after adding keys.
 - ⏭️ Automated browser E2E (Playwright): not added, because browser downloads were impractical on this network. Screenshots were checked manually instead (see above).
 
 ## Verified results (last run)

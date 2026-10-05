@@ -68,6 +68,10 @@ class Container:
                 from app.providers.search.tavily import TavilySearchProvider
 
                 self._search = TavilySearchProvider(self.settings)
+            elif self.settings.search_provider == "exa":
+                from app.providers.search.exa import ExaSearchProvider
+
+                self._search = ExaSearchProvider(self.settings)
             elif self.settings.search_provider == "fixture":
                 from app.providers.search.fixture import FixtureSearchProvider
 
