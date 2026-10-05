@@ -128,7 +128,7 @@ async def test_teaching_pack_api_and_partial_failure(client, worker):
 async def test_interactive_jobs_are_claimed_before_background(container, client):
     ws = await create_workspace(client, "Quantum")
     async with container.db.session() as s:
-        bg = await enqueue(s, kind="graph_extract", user_id="teacher-a", workspace_id=ws["id"], payload={})
+        bg = await enqueue(s, kind="reindex_vectors", user_id="teacher-a", workspace_id=ws["id"], payload={})
         chat = await enqueue(s, kind="chat_turn", user_id="teacher-a", workspace_id=ws["id"], payload={})
     async with container.db.session() as s:
         first = await claim_next(s, "w", 60)
@@ -156,7 +156,7 @@ async def test_low_priority_llm_calls_leave_a_reserve():
 
 @pytest.mark.nodb
 def test_concept_coverage_terms():
-    from app.services.tutor.guide import concept_terms, term_overlap
+    from app.core.concepts import concept_terms, term_overlap
 
     assert concept_terms("Scoped atomics in Rust") == ["scop", "atomic", "rust"]
     assert term_overlap(concept_terms("Rust ownership and borrowing"),

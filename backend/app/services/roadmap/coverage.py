@@ -1,7 +1,7 @@
 """Coverage tracking and gap detection.
 
 Coverage stages are recorded independently with timestamps:
-planned (in roadmap) / researched (graph claims with evidence) / explained (assistant explained it) /
+planned (in roadmap) / researched (stored sources discuss it) / explained (assistant explained it) /
 discussed (teacher asked about it) / completed (teacher explicitly marked it). Completion is never inferred.
 Self-reported understanding is stored separately and is not treated as mastery.
 
@@ -31,7 +31,7 @@ class CoverageService:
         self.c = c
 
     async def resolve_concepts(self, workspace_id: str, names: list[str]) -> dict[str, str]:
-        """name -> concept key (existing graph entity id when known)."""
+        """name -> concept key (existing key when the name, or a variant of it, is already known)."""
         if not names:
             return {}
         index = await self.c.roadmap.concept_index(workspace_id)
@@ -95,25 +95,30 @@ class CoverageService:
                    "completed": ("completed_at",)}[min_stage]
         return [k for k, r in recs.items() if any(getattr(r, a) for a in allowed)]
 
+    async def refresh_researched(self, workspace_id: str, concepts: list[tuple[str, str]]) -> dict[str, int]:
+        """Mark concepts as researched when stored passages really discuss them.
+
+        Returns concept key -> number of distinct sources with relevant passages (0 = not researched).
+        """
+        now = datetime.now(UTC)
+        support: dict[str, int] = {}
+        for key, name in concepts:
+            if key in support:
+                continue
+            passages = await self.c.retrieval.relevant_for_concept(workspace_id, name)
+            support[key] = len({p.source_id for p in passages})
+            if passages:
+                await self._upsert(workspace_id, key, name, {"researched_at": now})
+        return support
+
     # ------------------------------------------------------------------ gap detection
 
     async def gaps(self, workspace_id: str) -> dict[str, Any]:
         rm = await self.c.roadmap.current(workspace_id)
         recs = await self.records(workspace_id)
-        outline = await self.c.graph.concept_outline(workspace_id, limit=250)
-        node_by_id = {n["id"]: n for n in outline["nodes"]}
         gaps: list[dict[str, Any]] = []
-
-        items = []
-        if rm is not None:
-            for ph in rm.phases:
-                if not ph.included:
-                    continue
-                for it in ph.items:
-                    if it.included:
-                        items.append((ph, it))
+        items = [(ph, it) for ph in (rm.phases if rm else []) if ph.included for it in ph.items if it.included]
         planned_keys = {it.concept_key for _, it in items}
-        name_by_key = {it.concept_key: it.title for _, it in items}
 
         async with self.c.db.session() as s:
             notes = (await s.execute(select(NotesDocument.concept_keys).where(
@@ -121,44 +126,33 @@ class CoverageService:
             sessions = (await s.execute(select(ResearchSession.state).where(
                 ResearchSession.workspace_id == workspace_id))).scalars().all()
         noted = {k for ks in notes for k in (ks or [])}
+        support = await self.refresh_researched(workspace_id, [(it.concept_key, it.title) for _, it in items])
 
-        # 1. missing prerequisites: graph PREREQUISITE_OF edges into planned concepts from unplanned ones (required)
-        for e in outline["edges"]:
-            if e["family"] == "prerequisite" and e["target"] in planned_keys and e["source"] not in planned_keys:
-                src = node_by_id.get(e["source"], {})
-                gaps.append({"type": "missing_prerequisite", "kind": "required", "severity": "high",
-                             "concept_key": e["source"], "concept_name": src.get("name", "?"),
-                             "detail": f"'{src.get('name', '?')}' is a prerequisite of "
-                                       f"'{name_by_key.get(e['target'], node_by_id.get(e['target'], {}).get('name'))}'"
-                                       " (from researched sources) but is not in the roadmap.",
-                             "suggested_queries": [f"{src.get('name', '')} explained for beginners"]})
-        # roadmap-declared prerequisites that are missing from the plan (planner suggestion, lower certainty)
+        # 1. prerequisites the plan itself declares but no phase covers
         for _, it in items:
             for pk in it.prerequisite_keys or []:
                 if pk not in planned_keys:
-                    pname = node_by_id.get(pk, {}).get("name") or (recs[pk].concept_name if pk in recs else None)
+                    pname = recs[pk].concept_name if pk in recs else None
                     if pname:
-                        gaps.append({"type": "missing_prerequisite", "kind": "recommended", "severity": "medium",
+                        gaps.append({"type": "missing_prerequisite", "kind": "required", "severity": "high",
                                      "concept_key": pk, "concept_name": pname,
-                                     "detail": f"The plan lists '{pname}' as a prerequisite of '{it.title}' but it "
-                                               "is not covered by any phase.",
+                                     "detail": f"'{pname}' is listed as a prerequisite of '{it.title}' but no phase "
+                                               "covers it.",
                                      "suggested_queries": [f"{pname} introduction"]})
 
-        # 2-3. research depth per planned concept
+        # 2. research depth, examples, materials and coverage per planned concept
         for ph, it in items:
-            node = node_by_id.get(it.concept_key)
             rec = recs.get(it.concept_key)
-            claims = node["claims"] if node else 0
-            support = node["source_support"] if node else 0
-            if not node or claims == 0:
+            n_sources = support.get(it.concept_key, 0)
+            if n_sources == 0:
                 gaps.append({"type": "under_researched", "kind": "required", "severity": "high",
                              "concept_key": it.concept_key, "concept_name": it.title,
-                             "detail": f"No researched evidence yet for '{it.title}' (phase '{ph.title}').",
-                             "suggested_queries": [f"{it.title} {ph.title}".strip()]})
-            elif support <= 1:
+                             "detail": f"No researched source discusses '{it.title}' (phase '{ph.title}').",
+                             "suggested_queries": [f"{it.title} explained"]})
+            elif n_sources == 1:
                 gaps.append({"type": "weak_source_coverage", "kind": "recommended", "severity": "medium",
                              "concept_key": it.concept_key, "concept_name": it.title,
-                             "detail": f"'{it.title}' is supported by only one source; consider corroborating.",
+                             "detail": f"Only one source discusses '{it.title}'; consider corroborating.",
                              "suggested_queries": [f"{it.title} overview"]})
             if not (it.examples or []):
                 gaps.append({"type": "missing_examples", "kind": "recommended", "severity": "low",
@@ -175,45 +169,20 @@ class CoverageService:
                              "detail": f"'{it.title}' is planned but has not been explained, discussed or "
                                        "marked complete.", "suggested_queries": []})
 
-        # 4. claims needing review
-        unsupported = await self.c.graph.list_claims(workspace_id, status="unverified", limit=50)
-        contested = await self.c.graph.list_claims(workspace_id, status="contested", limit=50)
-        for c in contested:
-            gaps.append({"type": "contested_claim", "kind": "required", "severity": "medium", "claim_id": c["id"],
-                         "concept_name": c["text"][:120],
-                         "detail": "Sources disagree on this claim; review the evidence and perspectives.",
-                         "suggested_queries": [c["text"][:150]]})
-        for c in unsupported[:20]:
-            gaps.append({"type": "unsupported_claim", "kind": "recommended", "severity": "low", "claim_id": c["id"],
-                         "concept_name": c["text"][:120],
-                         "detail": "No verbatim supporting quote was verified for this claim.",
-                         "suggested_queries": [c["text"][:150]]})
-
-        # 5. unresolved questions from conversations
+        # 3. unresolved questions from conversations
         for st in sessions:
             for q in (st or {}).get("unresolved_questions", [])[:10]:
                 gaps.append({"type": "unresolved_question", "kind": "recommended", "severity": "medium",
                              "concept_name": q[:200], "detail": q, "suggested_queries": [q[:200]]})
 
-        # 6. optional extensions: well-connected researched concepts that are not planned
-        for n in outline["nodes"][:60]:
-            if n["id"] not in planned_keys and n["degree"] >= 3 and rm is not None:
-                gaps.append({"type": "optional_extension", "kind": "optional", "severity": "info",
-                             "concept_key": n["id"], "concept_name": n["name"],
-                             "detail": f"'{n['name']}' is well connected in your research ({n['degree']} links) but "
-                                       "not in the roadmap. Optional extension, not a requirement.",
-                             "suggested_queries": []})
-
         counts = {
             "planned_items": len(items),
-            "items_with_evidence": sum(1 for _, it in items if node_by_id.get(it.concept_key, {}).get("claims")),
-            "items_with_2plus_sources": sum(1 for _, it in items
-                                            if (node_by_id.get(it.concept_key, {}).get("source_support") or 0) >= 2),
+            "items_with_sources": sum(1 for _, it in items if support.get(it.concept_key)),
+            "items_with_2plus_sources": sum(1 for _, it in items if support.get(it.concept_key, 0) >= 2),
             "items_explained": sum(1 for _, it in items if recs.get(it.concept_key)
                                    and recs[it.concept_key].explained_at),
             "items_completed_explicitly": sum(1 for _, it in items if recs.get(it.concept_key)
                                               and recs[it.concept_key].completed_at),
-            "contested_claims": len(contested), "unverified_claims": len(unsupported),
         }
         return {"counts": counts, "gaps": gaps,
                 "note": "Counts describe recorded research and coverage events; they are not a measure of mastery."}

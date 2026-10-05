@@ -1,11 +1,9 @@
 """Teacher and student notes generated from accumulated research.
 
-Material for each section comes from: roadmap phase items (or a graph-derived
-outline when there is no roadmap), knowledge-graph claims for those concepts
-(with status/perspectives), evidence passages behind the claims, semantic
-retrieval, and coverage records (what was explained/discussed). Citations are
-validated against the passages actually provided and mapped to a global
-reference list of real sources.
+Material for each section comes from: roadmap phase items (or an outline planned from the research
+when there is no roadmap), passages that really discuss each concept, semantic retrieval for the
+section, and coverage records (what was explained/discussed). Citations are validated against the
+passages actually provided and mapped to a global reference list of real sources.
 """
 
 from __future__ import annotations
@@ -19,10 +17,10 @@ from app.core.errors import NotFoundError, ValidationFailed
 from app.core.ids import new_id
 from app.core.logging import get_logger
 from app.core.tokens import fit_items
+from app.db.locks import workspace_lock
 from app.db.models import NotesDocument, ResearchSession, Source, Workspace
 from app.llm.citations import rewrite_citations
 from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, prompt_budget, untrusted
-from app.services.knowledge.service import workspace_lock
 
 if TYPE_CHECKING:
     from app.container import Container
@@ -43,15 +41,6 @@ class NotesConfig(BaseModel):
     extra_instructions: str = Field(default="", max_length=2000)
 
 
-class OutlineSection(BaseModel):
-    title: str = Field(max_length=200)
-    concepts: list[str] = Field(min_length=1, max_length=10)
-
-
-class NotesOutline(BaseModel):
-    sections: list[OutlineSection] = Field(min_length=1, max_length=12)
-
-
 class SectionOut(BaseModel):
     heading: str = Field(max_length=200)
     body_markdown: str = Field(min_length=1, max_length=20000)
@@ -67,7 +56,7 @@ class SectionOut(BaseModel):
 def _system(kind: str, depth: str, audience: str, language: str) -> str:
     common = (f"Write in language: {language}. Use Markdown with headings (###), lists and tables where useful. "
               "Use $...$ for inline and $$...$$ for display math, fenced code blocks for code. "
-              "Base factual content on the provided passages and graph facts and cite them inline with their "
+              "Base factual content on the provided passages and cite them inline with their "
               "markers like [S2]. Only cite provided markers; never invent sources, URLs or quotations. If you add "
               "general background not supported by the passages, keep it uncontroversial and label it "
               "'(general background)'. Where sources disagree or a claim is contested, present the perspectives "
@@ -87,7 +76,7 @@ class NotesService:
         self.c = c
 
     async def _outline(self, ws: Workspace, cfg: NotesConfig) -> list[dict[str, Any]]:
-        """[{title, concepts:[{key,name,objectives,examples}]}] from roadmap, or a graph-derived outline."""
+        """[{title, concepts:[{key,name,objectives,examples}]}] from the roadmap, or planned from the research."""
         rm = await self.c.roadmap.current(ws.id)
         if rm is not None:
             out = []
@@ -101,38 +90,32 @@ class NotesService:
                     out.append({"title": ph.title, "objectives": ph.objectives, "concepts": concepts})
             if out:
                 return out
-        outline = await self.c.graph.concept_outline(ws.id, limit=60)
-        if not outline["nodes"]:
-            raise ValidationFailed("No research or roadmap yet: research the topic before generating notes")
-        names = [n["name"] for n in outline["nodes"]]
-        draft = await generate_structured(
-            self.c.llm, task="notes_outline", tier="fast", schema=NotesOutline, max_tokens=1500,
-            system="Group researched concepts into a logical sequence of teaching sections (3-8). Use only the "
-                   "given concept names.",
-            user=f"Topic: {ws.topic}\nAudience: {ws.audience}\nConcepts:\n" + "\n".join(f"- {n}" for n in names))
+        draft, _ = await self.c.roadmap.draft(
+            ws.id, instructions="Plan teaching sections for notes: 3-8 sections, each a coherent topic.")
         index = await self.c.roadmap.concept_index(ws.id)
-        allowed = {n.lower() for n in names}
-        sections = []
-        for sec in draft.sections:
-            cs = [{"key": self.c.roadmap.concept_key(ws.id, n, index), "name": n, "objectives": [], "examples": []}
-                  for n in sec.concepts if n.lower() in allowed]
-            if cs:
-                sections.append({"title": sec.title, "objectives": [], "concepts": cs})
-        if not sections:
+        sections = [{"title": ph.title, "objectives": ph.objectives,
+                     "concepts": [{"key": self.c.roadmap.concept_key(ws.id, it.concept, index), "name": it.concept,
+                                   "objectives": it.objectives, "examples": it.examples} for it in ph.items]}
+                    for ph in draft.phases]
+        if not any(sec["concepts"] for sec in sections):
             raise ValidationFailed("Could not derive a notes outline from the research")
         return sections
 
-    async def _material(self, ws_id: str, section: dict[str, Any]) -> tuple[list[dict], list[dict]]:
-        keys = [c["key"] for c in section["concepts"]]
-        facts = await self.c.graph.facts_for_entities(ws_id, keys, limit=40)
-        chunk_ids = await self.c.graph.evidence_chunks_for_entities(ws_id, keys, limit=12)
-        passages = await self.c.retrieval.chunks_by_ids(ws_id, chunk_ids)
+    async def _material(self, ws_id: str, section: dict[str, Any]) -> list[dict]:
+        """Up to 2 passages that really discuss each concept, then section-level passages as background."""
+        passages, seen = [], set()
+        for c in section["concepts"]:
+            for p in (await self.c.retrieval.relevant_for_concept(ws_id, c["name"]))[:2]:
+                if p.chunk_id not in seen:
+                    seen.add(p.chunk_id)
+                    passages.append(p)
         query = section["title"] + ": " + ", ".join(c["name"] for c in section["concepts"])
-        extra = await self.c.retrieval.search(ws_id, query, top_k=6)
-        seen = {p.chunk_id for p in passages}
-        passages += [p for p in extra if p.chunk_id not in seen]
-        return facts, [{"chunk_id": p.chunk_id, "source_id": p.source_id, "title": p.title, "url": p.url,
-                        "text": p.text} for p in passages[:12]]
+        for p in await self.c.retrieval.search(ws_id, query, top_k=6):
+            if p.chunk_id not in seen:
+                seen.add(p.chunk_id)
+                passages.append(p)
+        return [{"chunk_id": p.chunk_id, "source_id": p.source_id, "title": p.title, "url": p.url, "text": p.text}
+                for p in passages[:12]]
 
     async def generate(self, workspace_id: str, cfg: NotesConfig, progress=None) -> NotesDocument:
         async with self.c.db.session() as s:
@@ -143,6 +126,9 @@ class NotesService:
             raise NotFoundError("Workspace not found")
         coverage = await self.c.coverage.records(workspace_id)
         outline = await self._outline(ws, cfg)
+        # record which section concepts the stored sources really discuss (coverage: researched)
+        await self.c.coverage.refresh_researched(
+            workspace_id, [(c["key"], c["name"]) for sec in outline for c in sec["concepts"]])
         audience = cfg.audience_override or f"{ws.audience or 'students'} ({ws.academic_level or 'general level'})"
         system = _system(cfg.kind, cfg.depth, audience, ws.language or "en")
         convo = "\n".join(f"- {sx.rolling_summary[:1200]}" for sx in sessions if sx.rolling_summary)
@@ -154,7 +140,7 @@ class NotesService:
             if progress:
                 await progress(f"writing section {si + 1}/{len(outline)}", 10 + int(80 * si / max(1, len(outline))),
                                sec["title"])
-            facts, passages = await self._material(workspace_id, sec)
+            passages = await self._material(workspace_id, sec)
             markers = {f"S{i}": p for i, p in enumerate(passages, start=1)}
             cov_lines = []
             for cpt in sec["concepts"]:
@@ -165,8 +151,6 @@ class NotesService:
                 cov_lines.append(f"- {cpt['name']}: {', '.join(stages) or 'planned only'}{fb}")
             out_tokens = output_budget(self.c.llm, "smart", 4000)
             material = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1400)
-            fact_lines = [f"- {f['text']} [status: {f['status']}]" + (
-                f" [perspective: {'; '.join(f['perspectives'])}]" if f.get("perspectives") else "") for f in facts]
             passage_blocks = [untrusted("source", p["text"], id=m, title=p["title"][:120]) for m, p in markers.items()]
             user = (
                 f"Course topic: {ws.topic}\nSection {si + 1} of {len(outline)}: {sec['title']}\n"
@@ -177,8 +161,7 @@ class NotesService:
                     for c in sec["concepts"]) +
                 f"\n\nCoverage so far (what the teacher researched/discussed):\n{chr(10).join(cov_lines)}\n"
                 f"Conversation summaries:\n{convo or '-'}\n\n"
-                "Knowledge-graph facts:\n" + "\n".join(fit_items(fact_lines, int(material * 0.3))) +
-                "\n\nSource passages:\n" + "\n\n".join(fit_items(passage_blocks, int(material * 0.7))) +
+                "Source passages:\n" + "\n\n".join(fit_items(passage_blocks, int(material * 0.9))) +
                 f"\n\nOptions: exercises={cfg.include_exercises}, misconceptions={cfg.include_misconceptions}, "
                 f"discussion_prompts={cfg.include_discussion_prompts}.\n"
                 f"Extra teacher instructions: {cfg.extra_instructions or '-'}"
@@ -218,8 +201,6 @@ class NotesService:
         title = cfg.title or f"{ws.topic}: {'Teacher' if cfg.kind == 'teacher' else 'Student'} Notes"
         doc = await self._save(workspace_id, cfg.kind, title, sections_out, cfg.model_dump(),
                                list(dict.fromkeys(all_concepts)), source_ids, edited=False)
-        await self.c.graph.link_teaching_material(workspace_id, doc.id, title, f"{cfg.kind}_notes",
-                                                  list(dict.fromkeys(all_concepts)))
         return doc
 
     @staticmethod
@@ -293,6 +274,4 @@ class NotesService:
             raise ValidationFailed("Notes must have at least one section")
         new_doc = await self._save(workspace_id, doc.kind, title or doc.title, clean, doc.config, doc.concept_keys,
                                    doc.source_ids, edited=True)
-        await self.c.graph.link_teaching_material(workspace_id, new_doc.id, new_doc.title, f"{doc.kind}_notes",
-                                                  doc.concept_keys)
         return new_doc

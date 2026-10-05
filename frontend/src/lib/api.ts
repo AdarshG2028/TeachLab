@@ -24,7 +24,6 @@ export type Assessment = S["AssessmentOut"];
 export type AssessmentSummary = S["AssessmentSummary"];
 export type Question = S["QuestionOut"];
 export type Artifact = S["ArtifactOut"];
-export type Proposal = S["ProposalOut"];
 export type AssessmentConfig = S["AssessmentConfig"];
 export type NotesConfig = S["NotesConfig"];
 export type ExportRequest = S["ExportRequest"];
@@ -96,19 +95,6 @@ export const Api = {
   sources: (id: string) => api<Source[]>(`${ws(id)}/sources`),
   source: (id: string, sourceId: string) => api<SourceDetail>(`${ws(id)}/sources/${sourceId}`),
 
-  graphOverview: (id: string) => api<GraphData>(`${ws(id)}/graph/overview`),
-  graphStats: (id: string) => api<Record<string, number>>(`${ws(id)}/graph/stats`),
-  graphSearch: (id: string, q: string) => api<GraphNode[]>(`${ws(id)}/graph/search?q=${encodeURIComponent(q)}`),
-  entity: (id: string, eid: string) => api<EntityDetail>(`${ws(id)}/graph/entities/${eid}`),
-  neighborhood: (id: string, eid: string, depth = 1) =>
-    api<GraphData>(`${ws(id)}/graph/entities/${eid}/neighborhood?depth=${depth}`),
-  claims: (id: string, status?: string) => api<ClaimRow[]>(`${ws(id)}/graph/claims${status ? `?status=${status}` : ""}`),
-  reviewClaim: (id: string, claimId: string, status: string, note = "") =>
-    api<ClaimDetail>(`${ws(id)}/graph/claims/${claimId}/review`, json({ status, note })),
-  proposals: (id: string, status = "pending") => api<Proposal[]>(`${ws(id)}/ontology/proposals?status=${status}`),
-  resolveProposal: (id: string, pid: string, body: S["ProposalResolve"]) =>
-    api<Proposal>(`${ws(id)}/ontology/proposals/${pid}/resolve`, json(body)),
-
   roadmap: (id: string) => api<Roadmap | null>(`${ws(id)}/roadmap`),
   roadmapVersions: (id: string) => api<S["RoadmapVersionOut"][]>(`${ws(id)}/roadmap/versions`),
   generateRoadmap: (id: string, instructions = "") => api<Job>(`${ws(id)}/roadmap/generate`, json({ instructions })),
@@ -157,24 +143,8 @@ export const Api = {
   jobEventsUrl: (jobId: string) => `${API_URL}/api/jobs/${jobId}/events?user_id=${encodeURIComponent(getUserId())}`,
 };
 
-// Graph endpoints return plain dicts (no dedicated schema); typed here for the UI.
-export interface GraphNode { id: string; name: string; category: string; description?: string; degree?: number }
-export interface GraphEdge { id: string; source: string; target: string; type: string; family: string; status?: string; evidence_count?: number }
-export interface GraphData { nodes: GraphNode[]; edges: GraphEdge[] }
-export interface Evidence {
-  evidence_id: string; chunk_id: string; quote: string | null; quote_verified: boolean; confidence: number;
-  raw_predicate: string | null; perspective: string | null; extracted_at: string; source_id: string;
-  source_title: string; source_url: string | null;
-}
-export interface ClaimDetail {
-  id: string; text: string; kind: string; predicate: string; raw_predicates: string[]; family: string; status: string;
-  relation_status: string; confidence: number; perspectives: string[]; time_context: string | null;
-  evidence: Evidence[]; contradicts: { id: string; text: string; status: string }[];
-}
-export interface EntityDetail { id: string; name: string; category: string; description: string; aliases: string[]; claims: ClaimDetail[] }
-export interface ClaimRow { id: string; text: string; status: string; predicate: string; evidence_count: number; source_count: number }
 export interface Gap {
   type: string; kind: "required" | "recommended" | "optional" | "info"; severity: string; concept_key?: string;
-  claim_id?: string; concept_name: string; detail: string; suggested_queries: string[];
+  concept_name: string; detail: string; suggested_queries: string[];
 }
 export interface GapReport { counts: Record<string, number>; gaps: Gap[]; note: string }

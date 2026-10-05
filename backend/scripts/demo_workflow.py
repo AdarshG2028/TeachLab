@@ -1,7 +1,7 @@
-"""End-to-end demonstration: topic -> research -> graph -> roadmap -> notes -> assessment -> answer key -> PDFs.
+"""End-to-end demonstration: topic -> research -> roadmap -> notes -> assessment -> answer key -> PDFs.
 
 Drives the real HTTP API (in-process ASGI) and the real job worker against the configured
-PostgreSQL / Neo4j / Qdrant.
+PostgreSQL / Qdrant.
 
   Offline (deterministic FakeLLM + fixture search, no API keys):
       uv run python scripts/demo_workflow.py --topic "quantum computing qubits" --level 1
@@ -41,7 +41,6 @@ async def run(args: argparse.Namespace) -> None:
         "qdrant_path": ":memory:", "search_fixture_dir": BACKEND_DIR / "tests" / "fixtures" / "search"}
     settings = Settings(**overrides)
     c = Container(settings)
-    await c.graph.ensure_schema()
     await c.vectors.ensure_collection()
     worker = Worker(c, HANDLERS, concurrency=1, worker_id="demo")
     app = create_app(settings, container=c)
@@ -77,24 +76,13 @@ async def run(args: argparse.Namespace) -> None:
         reply = (await http.get(f"/api/workspaces/{wid}/sessions/{sid}/messages")).json()[-1]
         print(f"    assistant: {reply['content'][:300]!r}")
         print(f"    citations: {[c['title'] for c in reply['citations']]}")
-        await worker.run_until_idle()  # follow-up knowledge-graph extraction
-
-        step("3. Knowledge graph updated")
-        stats = (await http.get(f"/api/workspaces/{wid}/graph/stats")).json()
-        print(f"    {stats}")
-        claims = (await http.get(f"/api/workspaces/{wid}/graph/claims?limit=5")).json()
-        for cl in claims[:5]:
-            print(f"    claim [{cl['status']}] {cl['text']} (sources: {cl['source_count']})")
-        proposals = (await http.get(f"/api/workspaces/{wid}/ontology/proposals")).json()
-        print(f"    {len(proposals)} ontology proposals awaiting review")
-
-        step("4. Generate roadmap")
+        step("3. Generate roadmap")
         await wait((await http.post(f"/api/workspaces/{wid}/roadmap/generate", json={})).json())
         rm = (await http.get(f"/api/workspaces/{wid}/roadmap")).json()
         for i, p in enumerate(rm["phases"], 1):
             print(f"    Phase {i}: {p['title']} -> {[it['title'] for it in p['items']]}")
         if args.level == 0:
-            step("4b. Level 0: learn phase 1, then mark it complete")
+            step("3b. Level 0: learn phase 1, then mark it complete")
             r = (await http.post(f"/api/workspaces/{wid}/roadmap/phases/{rm['phases'][0]['key']}/start",
                                  json={"session_id": sid})).json()
             await wait(r["job"])
@@ -105,11 +93,11 @@ async def run(args: argparse.Namespace) -> None:
         gaps = (await http.get(f"/api/workspaces/{wid}/gaps")).json()
         print(f"    gap counts: {gaps['counts']}")
 
-        step("5. Generate teacher and student notes")
+        step("4. Generate teacher and student notes")
         for kind in ("teacher", "student"):
             await wait((await http.post(f"/api/workspaces/{wid}/notes/generate", json={"kind": kind})).json())
 
-        step("6. Configure and generate an assessment (strict coverage)")
+        step("5. Configure and generate an assessment (strict coverage)")
         cfg = {"title": f"{args.topic.title()} - Unit Test", "duration_minutes": 40, "coverage_mode": "strict",
                "difficulty": "mixed", "total_marks": 20, "student_level": "grade 11",
                "sections": [{"question_type": "mcq", "count": 4, "marks_each": 1},
@@ -126,7 +114,7 @@ async def run(args: argparse.Namespace) -> None:
         print(f"    {rep['question_count']} questions, {rep['total_marks']} marks, consistent={rep['consistent']}, "
               f"flagged={rep['flagged_questions']}")
 
-        step("7-8. Answer key + PDFs")
+        step("6. Answer key + PDFs")
         out = out_root / wid
         out.mkdir(parents=True, exist_ok=True)
         meta = {"teacher_name": "Demo Teacher", "institution": "Demo School", "class_name": "Grade 11"}

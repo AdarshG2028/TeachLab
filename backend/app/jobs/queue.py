@@ -19,13 +19,13 @@ from app.db.models import Job
 NOTIFY_CHANNEL = "teachlab_jobs"
 
 JOB_KINDS = {
-    "chat_turn", "research", "graph_extract", "ingest_url", "ingest_upload", "generate_roadmap", "generate_notes",
-    "generate_assessment", "regenerate_question", "export_pdf", "generate_pack", "rebuild_graph", "reindex_vectors",
+    "chat_turn", "research", "ingest_url", "ingest_upload", "generate_roadmap", "generate_notes",
+    "generate_assessment", "regenerate_question", "export_pdf", "generate_pack", "reindex_vectors",
 }
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
 # Long-running background work; interactive jobs (chat turns, lessons) are claimed first and keep a reserved slot.
-BACKGROUND_KINDS = ("graph_extract", "rebuild_graph", "reindex_vectors")
+BACKGROUND_KINDS = ("reindex_vectors",)
 
 
 async def enqueue(

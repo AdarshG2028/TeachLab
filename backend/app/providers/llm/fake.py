@@ -1,8 +1,8 @@
 """Deterministic LLM stand-in for tests and offline demos (ENV=development/test only).
 
 It derives its outputs from the prompt content (passages, slots, concept lists)
-using simple rules, so the full pipeline (extraction -> ontology resolution ->
-graph -> roadmap -> notes -> assessment -> PDF) runs end-to-end without network
+using simple rules, so the full pipeline (research ->
+roadmap -> lessons -> notes -> assessment -> PDF) runs end-to-end without network
 access. It validates orchestration, validation and persistence; it says nothing
 about real model quality. Tests can override any task with ``script()``.
 """
@@ -39,16 +39,17 @@ def _sentences(text: str) -> list[str]:
     return out
 
 
-def _relation_phrases() -> list[str]:
-    from app.services.knowledge.relations import CANONICAL
+_VERB_PHRASES = (
+    "is represented using", "is a type of", "is part of", "is a prerequisite for", "was developed by",
+    "is located in", "consists of", "is used by", "is an alternative to", "is encrypted with", "provides",
+    "preceded", "followed", "influenced", "caused", "cause", "measures", "measure", "enables", "prevents",
+    "reduces", "uses", "is a", "is an",
+)
 
-    phrases = set()
-    for spec in CANONICAL:
-        phrases.update(spec.synonyms)
-        phrases.update(spec.reverse_synonyms)
-    # a few phrases the registry does not know, to exercise new-relation-type proposals
-    phrases.update({"orbits", "is encrypted with", "is governed by laws of"})
-    return sorted((p for p in phrases if len(p) > 3), key=len, reverse=True)
+
+def _relation_phrases() -> list[str]:
+    """Verb phrases used to pick out subject/object noun phrases from fixture text."""
+    return sorted(_VERB_PHRASES, key=len, reverse=True)
 
 
 _PHRASES: list[str] | None = None
@@ -173,9 +174,6 @@ class FakeLLMProvider(LLMProvider):
     def _system(messages: list[ChatMessage]) -> str:
         return next((m.content for m in messages if m.role == "system"), "")
 
-    def _extract(self, messages):
-        return extract_rules(_tags("passage", self._user(messages)))
-
     def _summarize(self, messages):
         user = self._user(messages)
         prev = re.search(r"Previous summary:\n(.*?)\n\nNew messages:", user, re.S)
@@ -262,7 +260,7 @@ class FakeLLMProvider(LLMProvider):
         only = re.search(r"Regenerate ONLY the phase '([^']+)'", user)
         concepts = re.findall(r"^- (.+?) \((\w+); links=", user, re.M)
         topic = re.search(r"Topic: (.*)", user).group(1).strip()
-        if not concepts:  # no graph yet (guided kickoff): take concepts from the research passages
+        if not concepts:  # take concepts from the research passages
             found = extract_rules(_tags("source", user))["entities"]
             concepts = [(e["name"], e["category"]) for e in found][:12]
         if len(concepts) < 4:

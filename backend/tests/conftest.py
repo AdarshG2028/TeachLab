@@ -1,9 +1,7 @@
 """Shared fixtures.
 
-Integration tests use the docker-compose services (Postgres test DB, Neo4j) plus an
-in-memory Qdrant, the real local BGE model, the deterministic FakeLLMProvider and the
-fixture search provider. Each test starts from empty tables; Neo4j nodes of workspaces
-created during a test are removed afterwards.
+Integration tests use the docker-compose Postgres test DB plus an in-memory Qdrant, the real local BGE model, the deterministic FakeLLMProvider and the
+fixture search provider. Each test starts from empty tables.
 """
 
 from __future__ import annotations
@@ -47,7 +45,6 @@ def tmp_root(tmp_path_factory) -> Path:
 async def container(tmp_root) -> AsyncIterator[Container]:
     c = Container(make_settings(tmp_root))
     c._llm = FakeLLMProvider()
-    await c.graph.ensure_schema()
     await c.vectors.ensure_collection()
     yield c
     await c.close()
@@ -63,7 +60,6 @@ async def clean_state(request) -> AsyncIterator[None]:
     async with container.db.session() as s:
         ids = (await s.execute(text("SELECT id FROM workspaces"))).scalars().all()
         for wid in ids:
-            await container.graph.delete_workspace(wid)
             await container.vectors.delete_workspace(wid)
         tables = ", ".join(t.name for t in reversed(Base.metadata.sorted_tables))
         await s.execute(text(f"TRUNCATE {tables} CASCADE"))

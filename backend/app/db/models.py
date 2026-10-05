@@ -1,6 +1,6 @@
 """PostgreSQL schema (source of truth).
 
-Neo4j holds the knowledge graph and Qdrant holds vectors; both can be rebuilt
+Qdrant holds the vectors, which can be rebuilt
 from the rows stored here (sources, chunks, extractions).
 """
 
@@ -144,9 +144,8 @@ class Source(Base):
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     text: Mapped[str] = mapped_column(Text, default="")
     storage_path: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(24), default="ingested")  # ingested|indexed|graph_built|failed
+    status: Mapped[str] = mapped_column(String(24), default="ingested")  # ingested|indexed|failed
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    graph_built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     embedding_model: Mapped[str | None] = mapped_column(String(200))
     error: Mapped[str | None] = mapped_column(Text)
     meta: Mapped[dict[str, Any]] = mapped_column(default=dict)
@@ -182,59 +181,6 @@ class SearchCache(Base):
     provider: Mapped[str] = mapped_column(String(40))
     results: Mapped[list[Any]] = mapped_column(default=list)
     created_at: Mapped[datetime] = _created()
-
-
-class Extraction(Base):
-    """Validated LLM extraction output for a batch of chunks. Replayable into the graph."""
-
-    __tablename__ = "extractions"
-    __table_args__ = (UniqueConstraint("workspace_id", "batch_key"),)
-    id: Mapped[str] = _pk()
-    workspace_id: Mapped[str] = _ws_fk()
-    source_id: Mapped[str] = mapped_column(String(36), ForeignKey("sources.id", ondelete="CASCADE"), index=True)
-    session_id: Mapped[str | None] = mapped_column(String(36))
-    batch_key: Mapped[str] = mapped_column(String(64))
-    chunk_ids: Mapped[list[Any]] = mapped_column(default=list)
-    model: Mapped[str] = mapped_column(String(200))
-    prompt_version: Mapped[str] = mapped_column(String(20))
-    payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    apply_report: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    created_at: Mapped[datetime] = _created()
-
-
-class RelationType(Base):
-    """Workspace-specific relation types accepted beyond the built-in canonical set."""
-
-    __tablename__ = "relation_types"
-    __table_args__ = (UniqueConstraint("workspace_id", "name"),)
-    id: Mapped[str] = _pk()
-    workspace_id: Mapped[str] = _ws_fk()
-    name: Mapped[str] = mapped_column(String(80))
-    family: Mapped[str] = mapped_column(String(40))
-    status: Mapped[str] = mapped_column(String(16), default="proposed")  # proposed|accepted|rejected
-    synonyms: Mapped[list[Any]] = mapped_column(default=list)
-    created_at: Mapped[datetime] = _created()
-
-
-class OntologyProposal(Base):
-    """Uncertain ontology changes awaiting teacher review."""
-
-    __tablename__ = "ontology_proposals"
-    __table_args__ = (UniqueConstraint("workspace_id", "dedupe_key"),)
-    id: Mapped[str] = _pk()
-    workspace_id: Mapped[str] = _ws_fk()
-    kind: Mapped[str] = mapped_column(String(32))  # new_relation_type | entity_merge | contradiction | low_confidence
-    dedupe_key: Mapped[str] = mapped_column(String(64))
-    summary: Mapped[str] = mapped_column(Text)
-    payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    status: Mapped[str] = mapped_column(String(16), default="pending")
-    resolution: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    created_at: Mapped[datetime] = _created()
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-
-# --------------------------------------------------------------------------- roadmap / coverage
 
 
 class RoadmapVersion(Base):
@@ -279,7 +225,7 @@ class RoadmapItem(Base):
     id: Mapped[str] = _pk()
     phase_id: Mapped[str] = mapped_column(String(36), ForeignKey("roadmap_phases.id", ondelete="CASCADE"), index=True)
     workspace_id: Mapped[str] = _ws_fk()
-    concept_key: Mapped[str] = mapped_column(String(36))  # graph entity id (stable_id of workspace + name)
+    concept_key: Mapped[str] = mapped_column(String(36))  # stable_id of workspace + normalized concept name
     title: Mapped[str] = mapped_column(String(300))
     description: Mapped[str] = mapped_column(Text, default="")
     objectives: Mapped[list[Any]] = mapped_column(default=list)

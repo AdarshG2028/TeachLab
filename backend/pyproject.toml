@@ -17,7 +17,6 @@ dependencies = [
     "sentence-transformers>=3.3",
     "torch>=2.5",
     "qdrant-client>=1.12",
-    "neo4j>=5.26",
     "trafilatura>=2.0",
     "pypdf>=5.1",
     "reportlab>=4.2",
@@ -65,7 +64,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "live: hits real external APIs (Groq/Tavily); requires keys",
-    "integration: requires docker services (postgres, neo4j, qdrant)",
+    "integration: requires docker services (postgres; qdrant runs in memory)",
     "nodb: pure unit test, no services needed",
 ]
 addopts = "-m 'not live'"

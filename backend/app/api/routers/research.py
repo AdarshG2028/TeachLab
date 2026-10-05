@@ -70,3 +70,10 @@ async def get_source(source_id: str, w: WorkspaceDep, c: ContainerDep):
     base = SourceOut.model_validate(src).model_dump()
     return SourceDetail(**base, text_preview=src.text[:4000],
                         chunks=[ChunkOut.model_validate(ch) for ch in src.chunks[:200]])
+
+
+@router.post("/vectors/reindex", response_model=JobOut, status_code=202)
+async def reindex(w: WorkspaceDep, c: ContainerDep):
+    """Re-embed every stored chunk (e.g. after changing EMBEDDING_MODEL)."""
+    async with c.db.session() as s:
+        return await enqueue(s, kind="reindex_vectors", user_id=w.user_id, workspace_id=w.id, payload={})

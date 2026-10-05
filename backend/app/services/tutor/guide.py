@@ -1,7 +1,7 @@
 """Guided learning flow: roadmap first, then one structured lesson per phase, then a teaching pack.
 
-- Kickoff: a quick, broad search -> roadmap planned straight from the passages (graph extraction keeps
-  running in the background) -> the roadmap is shown in the chat.
+- Kickoff: a quick, broad search -> roadmap planned straight from the passages -> the roadmap is shown in
+  the chat.
 - "next": completes the current phase and teaches the next one as a structured lesson. Research is done
   just in time: only phase concepts that local knowledge does not cover yet trigger focused searches.
 - Finished (or on request): one job generates teacher + student notes, a test paper, the answer key
@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from app.core.concepts import concept_terms
 from app.core.logging import get_logger
 from app.db.models import RoadmapPhase, RoadmapVersion, Workspace
 from app.jobs.queue import enqueue
@@ -32,33 +33,6 @@ _START = re.compile(r"^\s*(start|begin|let'?s (start|begin|go)|start (the )?(cou
                     r"start learning|teach me)\W*$", re.I)
 _PACK = re.compile(r"\b(generate|create|make|build)\b.{0,40}\b(teaching pack|materials|pack|notes.{0,30}"
                    r"(test|paper|quiz|questions))\b", re.I)
-
-
-_STOP = {"and", "the", "for", "with", "from", "into", "of", "to", "in", "on", "a", "an", "its", "their", "how",
-         "what", "why", "basic", "basics", "introduction", "intro", "overview", "using", "use", "via", "vs"}
-
-
-def concept_terms(concept: str) -> list[str]:
-    """Content words of a concept name, lightly stemmed ("Scoped atomics in Rust" -> scoped, atomic, rust)."""
-    words = re.findall(r"[a-z0-9_#+]+", concept.lower())
-    return list(dict.fromkeys(_stem(w) for w in words if w not in _STOP and len(w) >= 3))
-
-
-def _stem(word: str) -> str:
-    if word.endswith(("ss", "us", "is")):
-        return word
-    for suffix in ("ing", "ed", "es", "s"):
-        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
-            return word[: -len(suffix)]
-    return word
-
-
-def term_overlap(terms: list[str], text: str) -> float:
-    """Fraction of concept terms whose stem starts a word in the text (borrowing ~ borrows ~ borrowed)."""
-    if not terms:
-        return 0.0
-    low = text.lower()
-    return sum(1 for t in terms if re.search(rf"(?<![a-z0-9_]){re.escape(t)}", low)) / len(terms)
 
 
 def quick_intent(message: str) -> QuickIntent | None:
@@ -98,10 +72,9 @@ class GuidedTutor:
                 f"{topic} prerequisites what to learn first"]
 
     async def kickoff(self, ws: Workspace, user_id: str, session_id: str, progress=None
-                      ) -> tuple[RoadmapVersion, ResearchOutcome, str | None]:
+                      ) -> tuple[RoadmapVersion, ResearchOutcome]:
         agent = self.c.research
         outcome = await agent.research(ws.id, self.kickoff_queries(ws), progress, max_new_sources=6)
-        graph_job = await agent.enqueue_graph_build(user_id, ws.id, outcome.new_source_ids, session_id)
         if progress:
             await progress("planning your roadmap", 55)
         passages = await self.c.retrieval.search(ws.id, f"{ws.topic} overview key concepts", top_k=10)
@@ -109,7 +82,7 @@ class GuidedTutor:
             ws.id, passages=passages,
             instructions=("Beginner learning path: start from fundamentals and prerequisites, one coherent idea per "
                           "phase, 4-7 phases, each teachable in a single lesson."))
-        return rm, outcome, graph_job
+        return rm, outcome
 
     @staticmethod
     def roadmap_markdown(ws: Workspace, rm: RoadmapVersion) -> str:
@@ -120,8 +93,7 @@ class GuidedTutor:
             concepts = ", ".join(it.title for it in p.items if it.included)
             minutes = f" (~{p.estimated_minutes} min)" if p.estimated_minutes else ""
             lines += [f"**Phase {i}: {p.title}**{minutes}  \n{concepts}", ""]
-        lines += ["Say **next** (or press *Next phase*) to start Phase 1. Ask questions at any point; "
-                      "the knowledge graph keeps growing in the background as sources are processed."]
+        lines += ["Say **next** (or press *Next phase*) to start Phase 1. Ask questions at any point."]
         return "\n".join(lines)
 
     # ------------------------------------------------------------------ lessons
@@ -131,7 +103,7 @@ class GuidedTutor:
         """Collect passages for every concept of the phase, researching only what is not covered yet."""
         lesson = LessonMaterial(phase=phase, index=index, total=total)
         concepts = [it.title for it in phase.items if it.included]
-        relevant = {c: await self._relevant_passages(ws.id, c) for c in concepts}
+        relevant = {c: await self.c.retrieval.relevant_for_concept(ws.id, c) for c in concepts}
         lesson.weak_concepts = [c for c in concepts if not relevant[c]]
         if lesson.weak_concepts:
             lesson.research_queries = [self.concept_query(ws, c) for c in lesson.weak_concepts[:3]]
@@ -139,9 +111,8 @@ class GuidedTutor:
                 await progress(f"researching phase {index}", 20, ", ".join(lesson.weak_concepts[:3]))
             outcome = await self.c.research.research(ws.id, lesson.research_queries, progress, max_new_sources=4)
             lesson.new_source_ids = outcome.new_source_ids
-            await self.c.research.enqueue_graph_build(user_id, ws.id, outcome.new_source_ids, session_id)
             for c in lesson.weak_concepts:
-                relevant[c] = await self._relevant_passages(ws.id, c)
+                relevant[c] = await self.c.retrieval.relevant_for_concept(ws.id, c)
         seen: set[str] = set()
         for concept in concepts:  # up to 2 passages per concept, in teaching order
             for p in relevant[concept][:2]:
@@ -155,16 +126,6 @@ class GuidedTutor:
                     lesson.passages.append(p)
         lesson.passages = lesson.passages[:12]
         return lesson
-
-    async def _relevant_passages(self, workspace_id: str, concept: str) -> list[RetrievedPassage]:
-        """Passages that really discuss the concept.
-
-        Embedding scores alone are not discriminative enough (unrelated chunks of the same domain score
-        0.6-0.7 with BGE), so a passage must also mention most of the concept's key terms.
-        """
-        terms = concept_terms(concept)
-        hits = await self.c.retrieval.search(workspace_id, concept, top_k=6)
-        return [h for h in hits if h.score >= self.settings.retrieval_min_score and term_overlap(terms, h.text) >= 0.6]
 
     @staticmethod
     def concept_query(ws: Workspace, concept: str) -> str:

@@ -152,7 +152,6 @@ class SourceOut(ORM):
     content_type: str
     status: str
     indexed_at: datetime | None
-    graph_built_at: datetime | None
     embedding_model: str | None
     meta: dict[str, Any]
 
@@ -168,33 +167,6 @@ class ChunkOut(ORM):
 class SourceDetail(SourceOut):
     text_preview: str
     chunks: list[ChunkOut]
-
-
-# ---------------------------------------------------------------- graph / ontology
-
-
-class ClaimReview(BaseModel):
-    status: Literal["unverified", "rejected", "teacher_verified"]
-    note: str = Field(default="", max_length=1000)
-
-
-class ProposalOut(ORM):
-    id: str
-    kind: str
-    summary: str
-    payload: dict[str, Any]
-    status: str
-    resolution: dict[str, Any]
-    created_at: datetime
-    resolved_at: datetime | None
-
-
-class ProposalResolve(BaseModel):
-    decision: Literal["accept", "reject"]
-    map_to: str | None = Field(default=None, max_length=60, description="Canonical relation for a rejected new type")
-    keep_entity_id: str | None = None
-    reject_claim_id: str | None = None
-    note: str = Field(default="", max_length=1000)
 
 
 # ---------------------------------------------------------------- roadmap / coverage

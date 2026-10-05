@@ -1,8 +1,8 @@
 # TeachLab
 
-An AI research workspace for teachers. A teacher researches a subject, and the system builds a source-backed knowledge graph from the research. It adapts to how familiar the teacher is with the subject, and produces teaching roadmaps, teacher and student notes, validated test papers, answer keys and PDFs from what was actually researched.
+An AI research workspace for teachers. A teacher researches a subject; the system keeps the sources, adapts to how familiar the teacher is with the subject, and produces teaching roadmaps, step-by-step lessons, teacher and student notes, validated test papers, answer keys and PDFs, all grounded in (and citing) what was actually researched.
 
-* **Backend:** FastAPI, PostgreSQL, Neo4j, Qdrant, and local BGE embeddings. Groq is the LLM, Exa or Tavily is the web search API, and PDFs are rendered locally with ReportLab.
+* **Backend:** FastAPI, PostgreSQL, Qdrant, and local BGE embeddings. Groq is the LLM, Exa or Tavily is the web search API, and PDFs are rendered locally with ReportLab.
 * **Frontend:** Next.js, React, TypeScript and Tailwind. This is a functional, replaceable interface that covers the whole workflow.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment and free-tier notes, and [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) for status.
@@ -20,14 +20,14 @@ backend/                 FastAPI app, worker, migrations, tests (uv project, Pyt
   app/jobs/, app/worker/ durable PostgreSQL job queue + worker process + job handlers
   app/llm/               structured (JSON-schema validated) generation, prompt-injection wrapping
   app/providers/         LLM (Groq, fake), search (Exa, Tavily, fixtures), embeddings (BGE), vector (Qdrant),
-                         graph (Neo4j), PDF (ReportLab), storage (local FS)
-  app/services/          research agent, ingestion, retrieval, knowledge (extraction + ontology),
+                         PDF (ReportLab), storage (local FS)
+  app/services/          research agent, guided tutor, ingestion, retrieval,
                          conversation memory, roadmap + coverage/gaps, notes, assessment, export
   migrations/            Alembic migrations
   scripts/               demo_workflow.py (end-to-end demo), export_openapi.py
   tests/                 unit/, integration/ (docker services), live/ (real APIs), fixtures/
 frontend/                Next.js app (src/app pages, src/components panels, src/lib typed API client)
-docker-compose.yml       PostgreSQL 16, Neo4j 5 Community, Qdrant
+docker-compose.yml       PostgreSQL 16, Qdrant
 infra/                   database init (creates the test database)
 ```
 
@@ -45,19 +45,18 @@ infra/                   database init (creates the test database)
 cp .env.example .env            # then add GROQ_API_KEY and TAVILY_API_KEY (see "Credentials")
 
 # 2. Infrastructure
-docker compose up -d            # postgres:5432, neo4j:7687 (browser :7474), qdrant:6333
+docker compose up -d            # postgres:5432, qdrant:6333
 
 # 3. Backend
 cd backend
 uv sync --extra otel            # installs deps incl. CPU torch + sentence-transformers
 uv run alembic upgrade head     # PostgreSQL schema
-#   Neo4j constraints/indexes and the Qdrant collection are created automatically on worker start
-#   (Container.graph.ensure_schema / vectors.ensure_collection). The first worker start downloads
+#   The Qdrant collection is created automatically on worker start. The first worker start downloads
 #   BAAI/bge-small-en-v1.5 (~130 MB) from Hugging Face.
 
 # 4. Run (two terminals)
 uv run uvicorn app.main:app --reload --port 8000     # API  -> http://localhost:8000/docs
-uv run python -m app.worker                          # worker (research, graph, notes, tests, PDFs)
+uv run python -m app.worker                          # worker (research, lessons, notes, tests, PDFs)
 
 # 5. Frontend (third terminal)
 cd ../frontend
@@ -86,11 +85,11 @@ button above the chat:
 3. At the end, **generate teaching pack** creates teacher and student notes, a question paper and a separate
    answer key as PDFs, with download links right in the chat.
 
-The knowledge graph grows in the background throughout; open the *Knowledge graph* tab at any time.
+Every lesson, note and question cites the real sources it was built from.
 
 ## End-to-end demo
 
-The demo creates a topic and runs research, the graph update, the roadmap, the Level-0 phase tutorial, notes, assessment configuration, the answer key and PDF downloads. It goes through the real API and worker.
+The demo creates a topic and runs research, the roadmap, the Level-0 phase tutorial, notes, assessment configuration, the answer key and PDF downloads. It goes through the real API and worker.
 
 ```bash
 cd backend
@@ -103,7 +102,7 @@ uv run python scripts/demo_workflow.py --live --topic "Photosynthesis" --level 1
 
 ```bash
 cd backend
-docker compose up -d                       # integration tests use the teachlab_test database + Neo4j
+docker compose up -d                       # integration tests use the teachlab_test database
 uv run pytest                              # unit + integration (live tests excluded by default)
 uv run pytest -m nodb                      # only pure unit tests (no services needed)
 uv run pytest -m live tests/live           # real Groq/Exa/Tavily calls; skipped when keys are missing
@@ -115,7 +114,7 @@ pnpm lint                                  # TypeScript type check
 pnpm build
 ```
 
-Integration tests run against the docker-compose PostgreSQL (`teachlab_test`) and Neo4j, an in-memory Qdrant and the real local BGE model. Every test removes the data it creates. The LLM and web search are replaced by a deterministic fake LLM and fixture search. These tests therefore verify orchestration, validation, persistence, isolation and provenance; they do not verify the quality of real model output, which the `live` tests and the `--live` demo cover.
+Integration tests run against the docker-compose PostgreSQL (`teachlab_test`), an in-memory Qdrant and the real local BGE model. Every test removes the data it creates. The LLM and web search are replaced by a deterministic fake LLM and fixture search. These tests therefore verify orchestration, validation, persistence, isolation and provenance; they do not verify the quality of real model output, which the `live` tests and the `--live` demo cover.
 
 ## Credentials
 
@@ -124,13 +123,14 @@ Integration tests run against the docker-compose PostgreSQL (`teachlab_test`) an
 | `GROQ_API_KEY` | https://console.groq.com/keys | Free tier. Defaults are `openai/gpt-oss-120b` (smart) and `openai/gpt-oss-20b` (fast), since new free accounts may not have Llama models. List what your key can use with `GET https://api.groq.com/openai/v1/models`. Set `LLM_TOKENS_PER_MINUTE` to your plan's limit (free tier ≈ 8000). |
 | `EXA_API_KEY` (with `SEARCH_PROVIDER=exa`) | https://dashboard.exa.ai/api-keys | Default search provider. Free credits at sign-up. Results are cached per workspace (`SEARCH_CACHE_TTL_HOURS`). |
 | `TAVILY_API_KEY` (with `SEARCH_PROVIDER=tavily`) | https://app.tavily.com | Alternative search provider with a monthly free credit allowance. |
-| `NEO4J_URI` / `NEO4J_USER` / `NEO4J_PASSWORD` | Local docker, or [Neo4j AuraDB Free](https://neo4j.com/cloud/aura-free/) | AuraDB URI format: `neo4j+s://<id>.databases.neo4j.io`. |
 | `QDRANT_URL` / `QDRANT_API_KEY` | Local docker, or [Qdrant Cloud](https://cloud.qdrant.io) free cluster | Leave `QDRANT_URL` empty to use embedded mode (`QDRANT_PATH`). |
 | `DATABASE_URL` | Local docker, or any PostgreSQL 14+ (Neon, Supabase, RDS…) | Must use the `postgresql+asyncpg://` scheme. |
 
 Authentication is local and header-based in this MVP. `AUTH_PROVIDER=local` takes the user from an `X-User-Id` header, and the UI has a user switcher. The app refuses to start this way when `ENV=production`. A Clerk/JWT provider plugs in through `app/auth/base.py::AuthProvider`. Workspace authorization is enforced on every route either way.
 
 ## Known limitations
+
+* **No knowledge graph.** The Neo4j knowledge graph (entities, claims, contradiction detection, ontology review) was removed: it used most of the free-tier LLM budget and the outputs did not depend on it. Source traceability remains through citations; contradiction detection between sources is no longer done.
 
 * **Authentication.** Clerk is not integrated (the user chose to skip auth for now), so local header auth is development-only.
 * **Real model quality.** It is not verified without keys. The Groq and Tavily integrations are implemented and tested against mocked HTTP. Live tests exist but were skipped in this environment.

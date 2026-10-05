@@ -37,11 +37,6 @@ async def health(c: ContainerDep) -> dict:
     except Exception as exc:
         checks["postgres"] = f"error: {type(exc).__name__}"
     try:
-        await c.graph.ping()
-        checks["neo4j"] = "ok"
-    except Exception as exc:
-        checks["neo4j"] = f"error: {type(exc).__name__}"
-    try:
         await c.vectors.ensure_collection()
         checks["qdrant"] = "ok"
     except Exception as exc:
@@ -100,7 +95,6 @@ async def update_workspace(body: WorkspaceUpdate, w: WorkspaceDep, c: ContainerD
 
 @router.delete("/workspaces/{workspace_id}", status_code=204)
 async def delete_workspace(w: WorkspaceDep, c: ContainerDep):
-    await c.graph.delete_workspace(w.id)
     await c.vectors.delete_workspace(w.id)
     async with c.db.session() as s:
         ws = await s.get(Workspace, w.id)
@@ -142,16 +136,12 @@ async def overview(w: WorkspaceDep, c: ContainerDep):
         active = (await s.execute(select(Job).where(Job.workspace_id == w.id,
                                                     Job.status.in_(["queued", "running"]))
                                   .order_by(Job.created_at.desc()).limit(20))).scalars().all()
-    try:
-        graph_stats = await c.graph.stats(w.id)
-    except Exception:
-        graph_stats = {}
     state = (latest.state if latest else {}) or {}
     has = {"sources": sources > 0, "roadmap": rm is not None, "notes": notes > 0, "assessment": assessments > 0,
            "phases_done": bool(state.get("completed_phase_ids"))}
     return WorkspaceOverview(
         workspace=WorkspaceOut.model_validate(w.workspace),
-        stats={"sources": sources, "notes": notes, "assessments": assessments, "graph": graph_stats},
+        stats={"sources": sources, "notes": notes, "assessments": assessments},
         latest_session_id=latest.id if latest else None, roadmap_version=rm.version if rm else None,
         workflow=workflow_for(w.workspace.familiarity_level, has),
         active_jobs=[JobOut.model_validate(j) for j in active])

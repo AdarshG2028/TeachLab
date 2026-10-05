@@ -56,10 +56,10 @@ async def test_level0_beginner_tutorial_flow(client, worker, fake_llm):
     # beginner without a roadmap: the roadmap comes first, then the answer to the question
     assert msg["meta"]["guided"]["kickoff"] and "Your learning roadmap" in msg["content"]
     assert msg["citations"] and all(c["source_id"] and c["chunk_id"] for c in msg["citations"])
-    await run_jobs(worker)  # follow-up graph extraction job
-    assert (await client.get(f"/api/workspaces/{wid}/graph/stats")).json()["entities"] >= 5
+    cov = (await client.get(f"/api/workspaces/{wid}/coverage")).json()
+    assert any(c["researched_at"] for c in cov)  # roadmap concepts the sources discuss are marked researched
 
-    # roadmap derived from the graph
+    # explicit regeneration (v1 came from the guided kickoff)
     rm_job = await job(client, worker, await client.post(f"/api/workspaces/{wid}/roadmap/generate", json={}))
     rm = (await client.get(f"/api/workspaces/{wid}/roadmap")).json()
     assert rm["version"] == rm_job["result"]["version"] == 2 and len(rm["phases"]) >= 2  # v1 came from kickoff
@@ -190,11 +190,12 @@ async def test_level2_advanced_flow_assessment_and_answer_key_separation(client,
     wid = ws["id"]
     await job(client, worker, await client.post(f"/api/workspaces/{wid}/research",
                                                 json={"queries": ["cloud computing serverless lambda"]}))
-    # no roadmap: notes come from a graph-derived outline
+    # no roadmap: notes come from an outline planned from the research
     assert (await client.get(f"/api/workspaces/{wid}/roadmap")).json() is None
     notes = await job(client, worker, await client.post(f"/api/workspaces/{wid}/notes/generate",
                                                         json={"kind": "teacher"}))
-    assert any(c["task"] == "notes_outline" for c in fake_llm.calls)
+    assert any(c["task"] == "roadmap" for c in fake_llm.calls)  # outline planned from passages
+    assert (await client.get(f"/api/workspaces/{wid}/roadmap")).json() is None  # ...but not saved as a roadmap
     assert notes["result"]["sections"] >= 2
 
     types = (await client.get(f"/api/workspaces/{wid}/assessments/question-types")).json()
@@ -369,4 +370,4 @@ async def test_full_workflow_fits_small_free_tier_request_limit(client, worker, 
         await chat(client, worker, wid, sid, f"Explain the Reign of Terror in more depth, part {i}. " + "context " * 60)
     assert fake_llm.calls and max(c["requested_tokens"] for c in fake_llm.calls) <= 6000
     tasks = {c["task"] for c in fake_llm.calls}
-    assert {"extract", "plan_turn", "answer", "roadmap", "questions", "summarize"} <= tasks
+    assert {"plan_turn", "answer", "roadmap", "questions", "summarize"} <= tasks

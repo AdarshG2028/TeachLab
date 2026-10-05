@@ -5,7 +5,7 @@ TeachLab has four deployable parts:
 * the **API** (FastAPI, stateless);
 * one or more **workers**, which use the same image with a different command;
 * the **frontend** (Next.js);
-* managed **data services**: PostgreSQL, Neo4j and Qdrant, plus object storage for PDFs and uploads.
+* managed **data services**: PostgreSQL and Qdrant, plus object storage for PDFs and uploads.
 
 ## Resource requirements (measured)
 
@@ -16,7 +16,6 @@ Measured on a 4-core, 12 GB Windows laptop with Python 3.13, torch 2.14 (CPU) an
 | API (`uvicorn app.main:app`) | **~120 MB** | Never loads the embedding model or calls the LLM. |
 | Worker, idle with BGE loaded | **~600 MB** | The model is loaded once per worker process. |
 | Worker while embedding a batch | **~740 MB** | Batch size `EMBEDDING_BATCH_SIZE=32`. |
-| Neo4j (docker-compose) | 1–1.5 GB | Heap capped at 1 GB in the compose file. |
 
 * **Query embedding latency:** about 40 ms on CPU.
 * **Indexing throughput:** about 6 chunks/s for ~250-token chunks on a busy 4-core CPU. Expect roughly 15–40 chunks/s on a dedicated modern 4-vCPU host. A typical research turn ingests 2–6 sources of about 5–30 chunks each, so indexing takes seconds; the LLM extraction calls dominate.
@@ -47,7 +46,6 @@ docker run --env-file .env teachlab-backend python -m app.worker
 | API | Render / Railway / Fly.io web service (512 MB) | Add the frontend origin to `CORS_ORIGINS`, e.g. `CORS_ORIGINS=["https://app.example.com"]`. |
 | Worker | Render / Railway / Fly.io background worker (≥1 GB) | Same image, `python -m app.worker`. |
 | PostgreSQL | Neon / Supabase / Railway | `DATABASE_URL=postgresql+asyncpg://…`. Run `alembic upgrade head` on release. |
-| Neo4j | Neo4j AuraDB Free | `NEO4J_URI=neo4j+s://<id>.databases.neo4j.io`. Constraints are created on worker start. |
 | Qdrant | Qdrant Cloud free cluster | `QDRANT_URL=https://<cluster>.cloud.qdrant.io:6333`, `QDRANT_API_KEY`. |
 | File storage | Local disk only for a single instance | For multiple instances, implement `StorageProvider` for S3, R2 or MinIO (see below). |
 
@@ -61,7 +59,7 @@ docker run --env-file .env teachlab-backend python -m app.worker
 * `LLM_TOKENS_PER_MINUTE` should match your Groq plan, and the model IDs should match Groq's current model list.
 * `CODE_VERIFICATION_ENABLED=false`, unless workers run in a locked-down container with no network, a read-only filesystem and CPU/memory limits.
 * Put a reverse proxy or platform TLS in front of the API. Keep request bodies within `MAX_UPLOAD_MB`.
-* Back up PostgreSQL. It is the source of truth, and the graph and vectors can be rebuilt from it with `POST /graph/rebuild` and `POST /vectors/reindex`.
+* Back up PostgreSQL. It is the source of truth, and the vector index can be rebuilt from it with `POST /vectors/reindex`.
 
 ## Free-tier quotas and bottlenecks
 
@@ -74,6 +72,5 @@ Verify current limits; free tiers change.
   * Expect large research sessions to be rate-limited. They then complete more slowly rather than failing.
 * **Exa** (default search). Free credits at sign-up; each search with page text uses credits, and results are cached per workspace for `SEARCH_CACHE_TTL_HOURS`.
 * **Tavily.** The free plan has a monthly credit allowance. Searches use `search_depth=basic` with `include_raw_content`, which usually avoids separate extract calls. Results are cached per workspace for `SEARCH_CACHE_TTL_HOURS`, and the agent skips searching when local knowledge is sufficient.
-* **Neo4j AuraDB Free.** Node and relationship caps (on the order of 200k nodes / 400k relationships at the time of writing). Free instances pause after inactivity and may be deleted after a long idle period; keep PostgreSQL as the system of record and rebuild the graph when needed. Each claim adds about 1 Claim node plus one Evidence node per supporting chunk.
 * **Qdrant Cloud free.** About 1 GB of storage. At 384 dimensions with payloads, that's on the order of hundreds of thousands of chunks.
 * **CPU embeddings.** These are the main worker CPU cost. Scale out by adding workers, since each claims jobs independently.

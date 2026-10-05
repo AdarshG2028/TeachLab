@@ -14,7 +14,6 @@ from app.core.config import Settings
 from app.core.errors import ConfigurationError
 from app.db.session import Database
 from app.providers.embeddings.base import EmbeddingProvider
-from app.providers.graph.neo4j_store import Neo4jGraphStore
 from app.providers.llm.base import LLMProvider
 from app.providers.pdf.base import PDFProvider
 from app.providers.search.base import SearchProvider
@@ -33,7 +32,6 @@ class Container:
         self._search: SearchProvider | None = None
         self._embeddings: EmbeddingProvider | None = None
         self._vectors: VectorStore | None = None
-        self._graph: Neo4jGraphStore | None = None
         self._pdf: PDFProvider | None = None
         self._services: dict[str, Any] = {}
 
@@ -101,13 +99,6 @@ class Container:
         return self._vectors
 
     @property
-    def graph(self) -> Neo4jGraphStore:
-        if self._graph is None:
-            s = self.settings
-            self._graph = Neo4jGraphStore.connect(s.neo4j_uri, s.neo4j_user, s.neo4j_password, s.neo4j_database)
-        return self._graph
-
-    @property
     def pdf(self) -> PDFProvider:
         if self._pdf is None:
             from app.providers.pdf.reportlab_provider import ReportLabPDFProvider
@@ -121,13 +112,6 @@ class Container:
         if name not in self._services:
             self._services[name] = factory()
         return self._services[name]
-
-    @property
-    def knowledge(self):
-        from app.services.knowledge.service import KnowledgeService
-
-        return self._svc("knowledge", lambda: KnowledgeService(
-            self.db, self.graph, self.llm, batch_tokens=self.settings.extraction_batch_tokens))
 
     @property
     def ingestion(self):
@@ -184,8 +168,6 @@ class Container:
         return self._svc("exports", lambda: ExportService(self))
 
     async def close(self) -> None:
-        if self._graph is not None:
-            await self._graph.close()
         if self._vectors is not None and hasattr(self._vectors, "close"):
             await self._vectors.close()
         await self.db.dispose()

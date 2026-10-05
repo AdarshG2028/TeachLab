@@ -2,7 +2,7 @@
 
 Each request is assembled from: the current request, recent messages, the
 rolling session summary, structured session state, explicit preferences,
-relevant graph facts and retrieved source passages. The full history stays in
+and retrieved source passages. The full history stays in
 PostgreSQL; only a budgeted slice is sent to the model.
 """
 
@@ -22,7 +22,6 @@ class ContextInputs:
     summary: str = ""
     session_state: dict = field(default_factory=dict)
     preferences: list[dict] = field(default_factory=list)
-    graph_facts: list[dict] = field(default_factory=list)
     passages: list[dict] = field(default_factory=list)  # {"marker","title","url","text","score"}
     recent_messages: list[dict] = field(default_factory=list)  # oldest -> newest {"role","content"}
 
@@ -33,7 +32,6 @@ class Budget:
     summary: int
     state: int
     preferences: int
-    graph: int
     passages: int
     history: int
 
@@ -46,8 +44,7 @@ def make_budget(context_tokens: int, max_output: int, ratio: float) -> Budget:
         summary=min(900, usable // 10),
         state=min(500, usable // 16),
         preferences=min(250, usable // 30),
-        graph=min(1_500, usable // 8),
-        passages=int(usable * 0.40),
+        passages=int(usable * 0.50),
         history=int(usable * 0.25),
     )
 
@@ -91,17 +88,6 @@ def build_context(inp: ContextInputs, budget: Budget) -> BuiltContext:
         kept, t = _fit_list(lines, budget.preferences)
         sections.append("## Teacher preferences\n" + "\n".join(kept))
         used += t
-    if inp.graph_facts:
-        lines = []
-        for f in inp.graph_facts:
-            extra = f" [status: {f.get('status')}]"
-            if f.get("perspectives"):
-                extra += f" [perspective: {'; '.join(f['perspectives'])}]"
-            lines.append(f"- {f['text']}{extra}")
-        kept, t = _fit_list(lines, budget.graph)
-        sections.append("## Knowledge graph facts (from earlier research)\n" + "\n".join(kept))
-        used += t
-
     passage_blocks = [untrusted("source", p["text"], id=p["marker"], title=p.get("title", "")[:150],
                                 url=p.get("url") or "") for p in inp.passages]
     kept_p, t = _fit_list(passage_blocks, budget.passages)

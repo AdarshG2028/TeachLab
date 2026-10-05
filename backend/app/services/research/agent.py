@@ -1,8 +1,6 @@
 """Research agent: one chat turn = plan -> (maybe) research -> retrieve -> answer -> update state.
 
-Runs inside the worker as a ``chat_turn`` job. Graph extraction for newly
-ingested sources is enqueued as a follow-up ``graph_extract`` job so answers
-are not blocked on (rate-limited) extraction calls.
+Runs inside the worker as a ``chat_turn`` job.
 """
 
 from __future__ import annotations
@@ -19,7 +17,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.core.ids import normalize_key, sha256_text
 from app.core.logging import get_logger
 from app.db.models import Message, Preference, ResearchSession, SearchCache, Workspace
-from app.jobs.queue import enqueue
 from app.llm.citations import cited_markers, rewrite_citations
 from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget
 from app.providers.search.base import SearchHit
@@ -125,7 +122,6 @@ class _Turn:
 
     message_id: str
     outcome: ResearchOutcome = field(default_factory=ResearchOutcome)
-    graph_job: str | None = None
     preface: str = ""
     plan: TurnPlan | None = None
     nav: dict[str, Any] | None = None
@@ -198,17 +194,6 @@ class ResearchAgent:
             await self.c.ingestion.index_source(workspace_id, sid)
         return out
 
-    async def enqueue_graph_build(self, user_id: str, workspace_id: str, source_ids: list[str],
-                                  session_id: str | None) -> str | None:
-        if not source_ids:
-            return None
-        key = f"graph_extract:{workspace_id}:{sha256_text(','.join(sorted(source_ids)))[:32]}"
-        async with self.c.db.session() as s:
-            job = await enqueue(s, kind="graph_extract", user_id=user_id, workspace_id=workspace_id,
-                                payload={"source_ids": source_ids, "session_id": session_id},
-                                idempotency_key=key, max_attempts=4)
-            return job.id
-
     # ------------------------------------------------------------------ chat turn
 
     async def handle_turn(self, *, user_id: str, workspace: Workspace, session_id: str, message_id: str,
@@ -242,7 +227,7 @@ class ResearchAgent:
 
         # 1) Guided kickoff: a beginner (or anyone saying start/next) without a roadmap gets the roadmap first.
         if rm is None and (workspace.familiarity_level == 0 or quick in ("start", "next")):
-            rm, turn.outcome, turn.graph_job = await tutor.kickoff(workspace, user_id, session_id, progress)
+            rm, turn.outcome = await tutor.kickoff(workspace, user_id, session_id, progress)
             turn.preface = tutor.roadmap_markdown(workspace, rm)
             turn.guided = {"kickoff": True, "phase_count": len([p for p in rm.phases if p.included]),
                            "roadmap_version": rm.version}
@@ -290,16 +275,16 @@ class ResearchAgent:
 
         # 5) Research decision for ordinary questions (lessons research per phase in prepare_lesson).
         local: list[RetrievedPassage] = []
-        focus_entities: list[dict] = []
         if lesson is None:
             local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
             strong = [p for p in local if p.score >= self.settings.retrieval_min_score]
-            for name in plan.focus_concepts[:5]:
-                focus_entities.extend(await self.c.graph.search_entities(ws_id, name, limit=2))
-            focus_facts = await self.c.graph.facts_for_entities(ws_id, [e["id"] for e in focus_entities], limit=10)
-            graph_supported = bool(plan.focus_concepts) and len(focus_facts) >= 2 and any(
-                p.score >= self.settings.retrieval_min_score * 0.8 for p in local)
-            turn.sufficient = len(strong) >= self.settings.sufficiency_min_hits or graph_supported
+            # focus concepts that stored passages already discuss count as local knowledge
+            concept_supported = False
+            for name in plan.focus_concepts[:3]:
+                if len(await self.c.retrieval.relevant_for_concept(ws_id, name)) >= 2:
+                    concept_supported = True
+                    break
+            turn.sufficient = len(strong) >= self.settings.sufficiency_min_hits or concept_supported
             explicit = plan.intent == "research_request"
             do_research = bool(plan.search_queries) and (
                 explicit or (plan.needs_external_research and not turn.sufficient)
@@ -307,8 +292,6 @@ class ResearchAgent:
             if do_research:
                 extra = await self.research(ws_id, plan.search_queries, progress)
                 turn.merge_outcome(extra)
-                turn.graph_job = await self.enqueue_graph_build(user_id, ws_id, extra.new_source_ids,
-                                                                session_id) or turn.graph_job
                 if extra.new_source_ids:
                     local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
         else:
@@ -323,9 +306,6 @@ class ResearchAgent:
             passages = lesson.passages
         else:
             passages = [p for p in local if p.score >= self.settings.retrieval_min_score * 0.8] or local[:3]
-        chunk_entities = await self.c.graph.entities_for_chunks(ws_id, [p.chunk_id for p in passages])
-        entity_ids = list(dict.fromkeys([e["id"] for e in focus_entities] + [e["id"] for e in chunk_entities]))[:12]
-        facts = await self.c.graph.facts_for_entities(ws_id, entity_ids, limit=30)
         markers = {f"S{i}": p for i, p in enumerate(passages, start=1)}
         mode_name, mode_text = FAMILIARITY[workspace.familiarity_level]
         system = self._answer_system(workspace, mode_text, roadmap_ctx)
@@ -338,7 +318,6 @@ class ResearchAgent:
                                              "current_phase_objectives": roadmap_ctx.get("objectives"),
                                              "phase_concepts": roadmap_ctx.get("concepts")}.items() if v},
             preferences=[{"key": p.key, "value": p.value, "origin": p.origin} for p in prefs],
-            graph_facts=facts,
             passages=[{"marker": m, "title": p.title, "url": p.url, "text": p.text} for m, p in markers.items()],
             recent_messages=[{"role": m.role, "content": m.content} for m in history if m.role in ("user",
                                                                                                     "assistant")],
@@ -362,7 +341,7 @@ class ResearchAgent:
             "concepts_explained": explained, "suggested_next": answer.suggested_next,
             "evidence_limitations": answer.evidence_limitations,
             "context": {"tokens": built.used_tokens, "passages": len(built.included_passages),
-                        "history_messages": built.included_history, "graph_facts": len(facts)}}
+                        "history_messages": built.included_history}}
         return await self._finish(turn, user_id, ws_id, session_id, text, citations=citations,
                                   open_questions=answer.open_questions, explained=explained, progress=progress)
 
@@ -370,11 +349,12 @@ class ResearchAgent:
         local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
         strong = [p for p in local if p.score >= self.settings.retrieval_min_score]
         roadmap_ctx = await self.c.roadmap.phase_context(ws_id, state)
-        known = (await self.c.graph.concept_outline(ws_id, limit=40))["nodes"]
+        recs = await self.c.coverage.records(ws_id)
+        known = [r.concept_name for r in sorted(recs.values(), key=lambda r: r.updated_at, reverse=True)][:40]
         return await generate_structured(
             self.c.llm, task="plan_turn", system=PLAN_SYSTEM, tier="fast", schema=TurnPlan, max_tokens=800,
             user=(f"Topic: {workspace.topic}\nFamiliarity: {FAMILIARITY[workspace.familiarity_level][0]}\n"
-                  f"Known concepts: {', '.join(k['name'] for k in known) or '(none yet)'}\n"
+                  f"Known concepts: {', '.join(known) or '(none yet)'}\n"
                   f"Current phase: {roadmap_ctx.get('current_phase_title') or '(none)'}\n"
                   f"local_retrieval: {len(strong)} strong hits (best score "
                   f"{max((p.score for p in local), default=0):.2f})\n"
@@ -403,8 +383,7 @@ class ResearchAgent:
                 "sufficient_locally": turn.sufficient,
                 "queries": turn.outcome.queries or turn.lesson_queries,
                 "cached_queries": turn.outcome.cached_queries, "new_sources": len(turn.outcome.new_source_ids),
-                "reused_sources": len(turn.outcome.reused_source_ids), "failures": turn.outcome.failures[:5],
-                "graph_job_id": turn.graph_job},
+                "reused_sources": len(turn.outcome.reused_source_ids), "failures": turn.outcome.failures[:5]},
             "navigation": turn.nav, "guided": turn.guided or None, **turn.extra_meta,
         }
         async with self.c.db.session() as s:
@@ -435,7 +414,7 @@ class ResearchAgent:
             await maybe_summarize(s, self.c.llm, sess, keep_recent=self.settings.context_recent_messages,
                                   trigger_tokens=self.settings.summary_trigger_tokens)
         return {"assistant_message_id": reply_id, "research_performed": meta["research"]["performed"],
-                "new_sources": turn.outcome.new_source_ids, "graph_job_id": turn.graph_job,
+                "new_sources": turn.outcome.new_source_ids,
                 "guided": turn.guided or None}
 
     @staticmethod
@@ -454,7 +433,7 @@ class ResearchAgent:
             f"Teaching goals: {'; '.join(ws.teaching_goals or []) or 'not specified'}.\n"
             f"Mode: {mode_text}\nRespond in language: {lang}.\n\n"
             "Grounding rules:\n"
-            "- Base factual statements on the retrieved source passages and knowledge-graph facts when they cover "
+            "- Base factual statements on the retrieved source passages when they cover "
             "the question, and cite passages inline with their markers like [S1] immediately after the claim.\n"
             "- Only use markers of passages that were provided. Never write URLs, paper titles or quotations that "
             "are not in the passages.\n"

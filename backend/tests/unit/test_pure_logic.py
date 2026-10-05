@@ -56,7 +56,6 @@ def test_context_respects_budget_and_keeps_latest_turn():
     passages = [{"marker": f"S{i}", "title": "t", "url": None, "text": "passage text " * 200} for i in range(20)]
     inp = ContextInputs(system="SYSTEM", user_message="current question", summary="older summary " * 50,
                         session_state={"current_phase": "Phase 1"}, preferences=[{"key": "style", "value": "simple"}],
-                        graph_facts=[{"text": "Qubit REPRESENTED_USING Bloch sphere", "status": "supported"}],
                         passages=passages, recent_messages=history)
     budget = make_budget(8000, 1000, 0.85)
     built = build_context(inp, budget)

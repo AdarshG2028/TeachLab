@@ -16,7 +16,6 @@ async def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
     container = Container(settings)
-    await container.graph.ensure_schema()
     await container.vectors.ensure_collection()
     _ = container.embeddings  # load the model once, before taking jobs
     worker = Worker(container, HANDLERS)

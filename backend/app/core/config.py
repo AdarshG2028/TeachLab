@@ -35,12 +35,6 @@ class Settings(BaseSettings):
     test_database_url: str = "postgresql+asyncpg://teachlab:teachlab@localhost:5432/teachlab_test"
     db_pool_size: int = 5
 
-    # --- Neo4j ---
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    neo4j_password: str = "teachlab-dev-password"
-    neo4j_database: str = "neo4j"
-
     # --- Qdrant ---
     # Set QDRANT_URL for a server (local Docker or Qdrant Cloud). Leave empty to use
     # embedded local mode at QDRANT_PATH (":memory:" for an ephemeral store).
@@ -102,7 +96,6 @@ class Settings(BaseSettings):
     fetch_timeout_seconds: float = 20.0
     chunk_target_tokens: int = 350
     chunk_overlap_tokens: int = 50
-    extraction_batch_tokens: int = 2_500
     retrieval_top_k: int = 8
     retrieval_min_score: float = 0.55
     sufficiency_min_hits: int = 3

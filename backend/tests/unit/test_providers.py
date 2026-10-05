@@ -16,7 +16,7 @@ from app.providers.llm.base import ChatMessage
 from app.providers.llm.groq import GroqLLMProvider
 from app.providers.search.exa import ExaSearchProvider
 from app.providers.search.tavily import TavilySearchProvider
-from app.services.knowledge.schemas import ExtractionResult
+from app.services.research.agent import TurnPlan
 
 pytestmark = pytest.mark.nodb
 
@@ -43,11 +43,11 @@ async def test_groq_request_shape_and_tier_routing():
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen.append(json.loads(req.content))
-        return httpx.Response(200, json=completion('{"entities": [], "relations": [], "facts": []}'))
+        return httpx.Response(200, json=completion('{"intent": "question"}'))
 
     llm = groq_with(handler)
-    out = await generate_structured(llm, task="extract", system="s", user="u", schema=ExtractionResult, tier="fast")
-    assert out.entities == []
+    out = await generate_structured(llm, task="plan_turn", system="s", user="u", schema=TurnPlan, tier="fast")
+    assert out.intent == "question"
     body = seen[0]
     assert body["model"] == "openai/gpt-oss-20b" and body["response_format"] == {"type": "json_object"}
     assert body["messages"][0]["role"] == "system" and "JSON Schema" in body["messages"][0]["content"]

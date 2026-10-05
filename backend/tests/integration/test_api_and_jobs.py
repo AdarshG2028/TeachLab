@@ -41,8 +41,8 @@ async def test_cross_user_access_is_denied_everywhere(client):
         ("delete", f"/api/workspaces/{wid}"), ("get", f"/api/workspaces/{wid}/overview"),
         ("get", f"/api/workspaces/{wid}/sessions"), ("get", f"/api/workspaces/{wid}/sessions/{session_id}/messages"),
         ("post", f"/api/workspaces/{wid}/sessions/{session_id}/messages"), ("post", f"/api/workspaces/{wid}/research"),
-        ("get", f"/api/workspaces/{wid}/sources"), ("get", f"/api/workspaces/{wid}/graph/overview"),
-        ("get", f"/api/workspaces/{wid}/graph/search?q=a"), ("get", f"/api/workspaces/{wid}/ontology/proposals"),
+        ("get", f"/api/workspaces/{wid}/sources"), ("post", f"/api/workspaces/{wid}/vectors/reindex"),
+        ("post", f"/api/workspaces/{wid}/teaching-pack"),
         ("get", f"/api/workspaces/{wid}/roadmap"), ("post", f"/api/workspaces/{wid}/roadmap/generate"),
         ("get", f"/api/workspaces/{wid}/coverage"), ("get", f"/api/workspaces/{wid}/gaps"),
         ("get", f"/api/workspaces/{wid}/notes"), ("post", f"/api/workspaces/{wid}/notes/generate"),
@@ -97,9 +97,9 @@ async def test_job_idempotency_key(container):
         ws = Workspace(owner_id="u1", title="t", topic="t")
         s.add(ws)
         await s.flush()
-        j1 = await enqueue(s, kind="rebuild_graph", user_id="u1", workspace_id=ws.id, payload={},
+        j1 = await enqueue(s, kind="reindex_vectors", user_id="u1", workspace_id=ws.id, payload={},
                            idempotency_key="k-1")
-        j2 = await enqueue(s, kind="rebuild_graph", user_id="u1", workspace_id=ws.id, payload={},
+        j2 = await enqueue(s, kind="reindex_vectors", user_id="u1", workspace_id=ws.id, payload={},
                            idempotency_key="k-1")
     assert j1.id == j2.id
 
@@ -115,11 +115,11 @@ async def test_retry_backoff_then_failure_is_recorded(container, client):
     async def fatal(ctx, payload):
         raise ProviderError("Invalid API key", retryable=False)
 
-    w = Worker(container, {"research": flaky, "rebuild_graph": fatal}, worker_id="t")
+    w = Worker(container, {"research": flaky, "reindex_vectors": fatal}, worker_id="t")
     async with container.db.session() as s:
         j_flaky = await enqueue(s, kind="research", user_id="teacher-a", workspace_id=ws["id"], payload={},
                                 max_attempts=3)
-        j_fatal = await enqueue(s, kind="rebuild_graph", user_id="teacher-a", workspace_id=ws["id"], payload={})
+        j_fatal = await enqueue(s, kind="reindex_vectors", user_id="teacher-a", workspace_id=ws["id"], payload={})
     for _ in range(3):
         await w.run_until_idle()
         async with container.db.session() as s:  # fast-forward the backoff
@@ -160,7 +160,7 @@ async def test_job_owner_recheck_in_worker(container, client):
 
         s.add(User(id="intruder"))
         await s.flush()
-        job = await enqueue(s, kind="rebuild_graph", user_id="intruder", workspace_id=ws["id"], payload={})
+        job = await enqueue(s, kind="reindex_vectors", user_id="intruder", workspace_id=ws["id"], payload={})
     from app.worker.handlers import HANDLERS
 
     await Worker(container, HANDLERS, worker_id="t").run_until_idle()
@@ -188,7 +188,7 @@ async def test_ssrf_url_rejected_at_api(client):
     assert r.status_code == 400 and r.json()["error"]["code"] == "unsafe_url"
 
 
-async def test_upload_ingestion(client, worker):
+async def test_upload_ingestion(client, worker, container):
     ws = await create_workspace(client, "IoT")
     content = ("# MQTT notes\n\nMQTT is a lightweight messaging protocol. Each IoT device uses MQTT. "
                "A temperature sensor measures temperature. " * 5).encode()
@@ -197,7 +197,9 @@ async def test_upload_ingestion(client, worker):
     assert r.status_code == 202, r.text
     await run_jobs(worker)
     job = await job_ok(client, r.json()["id"])
-    assert job["result"]["created"] and job["result"]["graph"]["claims"] >= 1
+    assert job["result"]["created"]
+    passages = await container.retrieval.relevant_for_concept(ws["id"], "temperature sensor")
+    assert passages and passages[0].title.startswith("MQTT notes")
     r2 = await client.post(f"/api/workspaces/{ws['id']}/sources/upload",
                            files={"file": ("evil.exe", b"MZ\x00\x00", "application/octet-stream")})
     assert r2.status_code == 422

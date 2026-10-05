@@ -6,18 +6,15 @@ import { ErrorText } from "@/components/ErrorText";
 import { LEVELS } from "@/components/WorkspaceForm";
 import { ChatPanel } from "@/components/panels/ChatPanel";
 import { RoadmapPanel } from "@/components/panels/RoadmapPanel";
-import { GraphPanel } from "@/components/panels/GraphPanel";
 import { SourcesPanel } from "@/components/panels/SourcesPanel";
 import { CoveragePanel } from "@/components/panels/CoveragePanel";
 import { NotesPanel } from "@/components/panels/NotesPanel";
 import { AssessmentPanel } from "@/components/panels/AssessmentPanel";
 import { ExportsPanel } from "@/components/panels/ExportsPanel";
-import { ReviewPanel } from "@/components/panels/ReviewPanel";
 
 const TABS = [
-  ["chat", "Research chat"], ["roadmap", "Roadmap"], ["graph", "Knowledge graph"], ["sources", "Sources"],
+  ["chat", "Research chat"], ["roadmap", "Roadmap"], ["sources", "Sources"],
   ["coverage", "Coverage & gaps"], ["notes", "Notes"], ["tests", "Tests"], ["exports", "PDF exports"],
-  ["review", "Review"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -30,7 +27,7 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
     Api.overview(id).then(setOv).catch(setError);
   }, [id]);
   useEffect(() => refresh(), [refresh]);
-  // Deep links: /workspaces/<id>?tab=graph
+  // Deep links: /workspaces/<id>?tab=roadmap
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("tab");
     if (requested && TABS.some(([key]) => key === requested)) setTab(requested as Tab);
@@ -51,8 +48,8 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
             {w.time_available_minutes ? ` · ${w.time_available_minutes} min available` : ""}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            {ov.stats.sources as number} sources · {(ov.stats.graph as Record<string, number>)?.entities ?? 0} concepts ·{" "}
-            {(ov.stats.graph as Record<string, number>)?.claims ?? 0} claims · roadmap v{ov.roadmap_version ?? "–"}
+            {ov.stats.sources as number} sources · {ov.stats.notes as number} notes · {ov.stats.assessments as number} tests
+            · roadmap v{ov.roadmap_version ?? "–"}
           </p>
         </div>
         <label className="text-sm">
@@ -88,13 +85,11 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
         {tab === "chat" && <ChatPanel workspaceId={id} sessionId={sessionId} onActivity={refresh} />}
         {tab === "roadmap" && <RoadmapPanel workspaceId={id} sessionId={sessionId} level={w.familiarity_level}
           onStartPhase={() => setTab("chat")} />}
-        {tab === "graph" && <GraphPanel workspaceId={id} />}
         {tab === "sources" && <SourcesPanel workspaceId={id} onActivity={refresh} />}
         {tab === "coverage" && <CoveragePanel workspaceId={id} />}
         {tab === "notes" && <NotesPanel workspaceId={id} />}
         {tab === "tests" && <AssessmentPanel workspaceId={id} defaultLevel={w.academic_level} />}
         {tab === "exports" && <ExportsPanel workspaceId={id} />}
-        {tab === "review" && <ReviewPanel workspaceId={id} />}
       </div>
     </div>
   );

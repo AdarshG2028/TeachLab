@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import graph, jobs, materials, planning, research, workspaces
+from app.api.routers import jobs, materials, planning, research, workspaces
 from app.container import Container
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
@@ -86,7 +86,7 @@ def create_app(settings: Settings | None = None, container: Container | None = N
                                                                 "message": "Internal server error",
                                                                 "details": {}}})
 
-    for r in (workspaces.router, research.router, graph.router, planning.router, materials.router, jobs.router):
+    for r in (workspaces.router, research.router, planning.router, materials.router, jobs.router):
         app.include_router(r, prefix="/api")
     _setup_otel(app, settings)
     return app

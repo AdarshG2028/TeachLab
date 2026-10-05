@@ -1,9 +1,9 @@
-"""Roadmaps: versioned teaching plans derived from the knowledge graph.
+"""Roadmaps: versioned teaching plans planned from the research.
 
-The graph is not forced into a tree; the roadmap is a *view*: ordered phases of
-concept items. Every change creates a new version. Teacher edits are flagged
-(``teacher_edited``) and carried over when the roadmap is regenerated after new
-research. Phase identity across versions uses a stable ``key``.
+A roadmap is ordered phases of concept items. Every change creates a new version. Teacher edits are
+flagged (``teacher_edited``) and carried over when the roadmap is regenerated after new research.
+Phase identity across versions uses a stable ``key``; concept identity uses a key derived from the
+normalized concept name (shared with coverage records and test topics).
 """
 
 from __future__ import annotations
@@ -18,15 +18,16 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.concepts import concept_key as base_concept_key
+from app.core.concepts import concept_name_keys
 from app.core.errors import NotFoundError, ValidationFailed
 from app.core.ids import new_id, normalize_key, stable_id
 from app.core.logging import get_logger
 from app.core.tokens import fit_items
+from app.db.locks import workspace_lock
 from app.db.models import CoverageRecord, ResearchSession, RoadmapItem, RoadmapPhase, RoadmapVersion, Workspace
 from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, prompt_budget, untrusted
 from app.services.conversation.memory import session_state
-from app.services.knowledge.ontology import entity_keys
-from app.services.knowledge.service import workspace_lock
 
 if TYPE_CHECKING:
     from app.container import Container
@@ -62,7 +63,7 @@ ROADMAP_SYSTEM = """You design teaching roadmaps for a teacher. Choose the organ
 technical subjects usually follow prerequisites then applications; history often needs chronological, thematic or
 causal organization; mix when appropriate. Divide the roadmap into coherent phases (3-8 typically), each with
 learning objectives and an ordered list of concept items. Put prerequisites before the concepts that need them.
-Prefer concepts that appear in the provided knowledge graph (they have been researched); you may add essential
+Base the concepts on the provided research passages and on concepts already covered; you may add essential
 concepts that are missing, but keep names short and canonical. Respect teacher-locked phases/items exactly as given.
 Adapt depth to the student audience and the available time. Do not invent sources.
 """ + UNTRUSTED_POLICY
@@ -102,61 +103,56 @@ class RoadmapService:
     # ------------------------------------------------------------------ concept keys
 
     async def concept_index(self, workspace_id: str) -> dict[str, str]:
-        """key -> entity id for all graph entities (for linking roadmap concepts to graph nodes)."""
+        """Normalized name -> existing concept key (coverage records), so renamed/plural forms stay linked."""
+        async with self.c.db.session() as s:
+            rows = (await s.execute(select(CoverageRecord.concept_key, CoverageRecord.concept_name).where(
+                CoverageRecord.workspace_id == workspace_id))).all()
         idx: dict[str, str] = {}
-        for e in await self.c.graph.load_entities(workspace_id):
-            for k in e.keys:
-                idx.setdefault(k, e.id)
+        for key, name in rows:
+            for k in concept_name_keys(name):
+                idx.setdefault(k, key)
         return idx
 
     @staticmethod
     def concept_key(workspace_id: str, name: str, index: dict[str, str]) -> str:
-        keys = entity_keys(name)
-        for k in keys:
+        for k in concept_name_keys(name):
             if k in index:
                 return index[k]
-        return stable_id(workspace_id, "entity", keys[0] if keys else normalize_key(name))
+        return base_concept_key(workspace_id, name)
 
     # ------------------------------------------------------------------ generation
 
-    async def generate(self, workspace_id: str, *, instructions: str = "", progress=None,
-                       only_phase_key: str | None = None, passages: list | None = None) -> RoadmapVersion:
-        """Generate a roadmap version from the graph outline and, optionally, raw research passages.
-
-        Passages let a roadmap be planned right after the first search, before slower graph extraction
-        has finished (guided beginner flow).
-        """
+    async def draft(self, workspace_id: str, *, instructions: str = "", passages: list | None = None,
+                    only_phase_key: str | None = None, progress=None) -> tuple[RoadmapDraft, RoadmapVersion | None]:
+        """Plan phases from research passages and concepts already covered (not saved)."""
         async with self.c.db.session() as s:
             ws = await s.get(Workspace, workspace_id)
             if ws is None:
                 raise NotFoundError("Workspace not found")
             prev = await self.current(workspace_id, s)
+            covered = (await s.execute(select(CoverageRecord.concept_name).where(
+                CoverageRecord.workspace_id == workspace_id).order_by(CoverageRecord.updated_at.desc()).limit(80))
+                       ).scalars().all()
         if progress:
-            await progress("reading knowledge graph", 15)
-        outline = await self.c.graph.concept_outline(workspace_id, limit=100)
-        names = {n["id"]: n["name"] for n in outline["nodes"]}
-        graph_lines = [f"- {n['name']} ({n['category']}; links={n['degree']}, claims={n['claims']})"
-                       + (f": {n['description'][:160]}" if n.get("description") else "") for n in outline["nodes"]]
-        edge_lines = [f"- {names[e['source']]} {e['type']} {names[e['target']]}" for e in outline["edges"]
-                      if e["family"] in ("prerequisite", "taxonomic", "compositional", "causal", "temporal")
-                      and e["source"] in names and e["target"] in names][:150]
+            await progress("reading research", 15)
+        if passages is None:
+            passages = await self.c.retrieval.search(workspace_id, f"{ws.topic} overview key concepts", top_k=12)
+        if not passages and not covered:
+            raise ValidationFailed("No research yet: research the topic before planning a roadmap")
         locked = self._locked_summary(prev, only_phase_key)
         out_tokens = output_budget(self.c.llm, "smart", 4000)
         material = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1500)
-        graph_share, edge_share = (0.35, 0.15) if passages else (0.6, 0.4)
-        graph_text = "\n".join(fit_items(graph_lines, int(material * graph_share))) or "(no research yet)"
-        edge_text = "\n".join(fit_items(edge_lines, int(material * edge_share))) or "(none)"
+        covered_text = ", ".join(fit_items(list(covered), int(material * 0.15))) or "(none yet)"
         passage_text = "\n\n".join(fit_items(
-            [untrusted("source", p.text[:1500], title=p.title[:100]) for p in passages or []], int(material * 0.5)))
+            [untrusted("source", p.text[:1500], title=p.title[:100]) for p in passages], int(material * 0.8)))
         user = (
             f"Topic: {ws.topic}\nScope: {ws.description or '-'}\nAudience: {ws.audience or '-'} "
             f"({ws.academic_level or '-'})\nTeaching goals: {'; '.join(ws.teaching_goals or []) or '-'}\n"
             f"Teacher familiarity level: {ws.familiarity_level} (0=beginner,1=familiar,2=advanced)\n"
             f"Time available: {ws.time_available_minutes or 'unspecified'} minutes\n"
             f"Language: {ws.language}\n\n"
-            f"Knowledge graph concepts (researched):\n{graph_text}\n\n"
-            f"Key relations:\n{edge_text}\n\n"
-            + (f"Research passages:\n{passage_text}\n\n" if passage_text else "") +
+            f"Concepts already covered in this workspace: {covered_text}\n\n"
+            f"Research passages:\n{passage_text or '(none)'}\n\n"
             f"Teacher-locked phases/items to keep unchanged:\n{locked or '(none)'}\n\n"
             f"Teacher instructions: {instructions or '(none)'}"
         )
@@ -170,10 +166,19 @@ class RoadmapService:
             await progress("planning roadmap", 40)
         draft = await generate_structured(self.c.llm, task="roadmap", system=ROADMAP_SYSTEM, user=user,
                                           schema=RoadmapDraft, tier="smart", max_tokens=out_tokens)
+        return draft, prev
+
+    async def generate(self, workspace_id: str, *, instructions: str = "", progress=None,
+                       only_phase_key: str | None = None, passages: list | None = None) -> RoadmapVersion:
+        draft, prev = await self.draft(workspace_id, instructions=instructions, passages=passages,
+                                       only_phase_key=only_phase_key, progress=progress)
         if progress:
             await progress("saving roadmap version", 80)
         index = await self.concept_index(workspace_id)
-        return await self._save_from_draft(workspace_id, draft, prev, index, only_phase_key, instructions)
+        version = await self._save_from_draft(workspace_id, draft, prev, index, only_phase_key, instructions)
+        await self.c.coverage.refresh_researched(
+            workspace_id, [(it.concept_key, it.title) for ph in version.phases for it in ph.items if it.included])
+        return version
 
     @staticmethod
     def _locked_summary(prev: RoadmapVersion | None, only_phase_key: str | None) -> str:

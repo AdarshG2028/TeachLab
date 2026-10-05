@@ -1,4 +1,4 @@
-"""Live checks against Groq and Tavily. Skipped unless GROQ_API_KEY / TAVILY_API_KEY are set.
+"""Live checks against Groq, Exa and Tavily. Each test is skipped unless its key is set.
 
 Run with:  uv run pytest -m live tests/live
 """
@@ -8,13 +8,11 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import Settings
-from app.llm.structured import generate_structured
+from app.llm.citations import cited_markers
+from app.llm.structured import generate_structured, untrusted
 from app.providers.llm.groq import GroqLLMProvider
 from app.providers.search.tavily import TavilySearchProvider
-from app.services.knowledge.extractor import Passage, extract_candidates
-from app.services.knowledge.ontology import OntologyResolver, PassageRef
-from app.services.knowledge.relations import RelationRegistry
-from app.services.research.agent import TurnPlan
+from app.services.research.agent import AnswerOutput, TurnPlan
 
 pytestmark = [pytest.mark.live, pytest.mark.nodb]
 S = Settings()
@@ -23,21 +21,23 @@ needs_groq = pytest.mark.skipif(not S.groq_api_key, reason="GROQ_API_KEY not set
 needs_tavily = pytest.mark.skipif(not S.tavily_api_key, reason="TAVILY_API_KEY not set")
 needs_exa = pytest.mark.skipif(not S.exa_api_key, reason="EXA_API_KEY not set")
 
+PASSAGES = {
+    "quantum": "A qubit is represented using the Bloch sphere. Superposition enables quantum parallelism.",
+    "history": "The Enlightenment influenced the French Revolution, which began in 1789 in Paris.",
+    "iot": "A temperature sensor measures temperature and sends readings to an IoT gateway over MQTT.",
+}
+
 
 @needs_groq
-@pytest.mark.parametrize("text", [
-    "A qubit is represented using the Bloch sphere. Superposition enables quantum parallelism.",
-    "The Enlightenment influenced the French Revolution, which began in 1789 in Paris.",
-    "A temperature sensor measures temperature and sends readings to an IoT gateway over MQTT.",
-])
-async def test_groq_extraction_resolves_cleanly(text):
+@pytest.mark.parametrize("domain", list(PASSAGES))
+async def test_groq_grounded_answer_cites_given_passages(domain):
     llm = GroqLLMProvider(S)
-    result = await extract_candidates(llm, topic="test", passages=[Passage("P1", "c1", "s1", "src", text)])
-    assert result.entities and (result.relations or result.facts)
-    batch = OntologyResolver("ws-live", RelationRegistry.default(), []).resolve(
-        result, {"P1": PassageRef("c1", "s1", text)}, extraction_id="e", session_id=None, extracted_at="now")
-    assert batch.claims
-    assert any(ev.quote_verified for ev in batch.evidence), "model quotes should match the passage verbatim"
+    system = ("Answer using the passages and cite them with markers like [S1]. Only use provided markers.\n"
+              + untrusted("source", PASSAGES[domain], id="S1"))
+    out = await generate_structured(llm, task="answer", tier="smart", schema=AnswerOutput, system=system,
+                                    user="Explain the main idea of the passage in two sentences.")
+    markers = cited_markers(out.answer_markdown) or out.cited_sources
+    assert markers and set(markers) <= {"S1"}
 
 
 @needs_groq

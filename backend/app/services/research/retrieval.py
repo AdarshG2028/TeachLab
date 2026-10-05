@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
+from app.core.concepts import concept_terms, term_overlap
 from app.db.models import Chunk, Source
 
 if TYPE_CHECKING:
@@ -64,3 +65,14 @@ class RetrievalService:
 
     async def chunks_by_ids(self, workspace_id: str, chunk_ids: list[str]) -> list[RetrievedPassage]:
         return await self.hydrate(workspace_id, [(cid, 1.0) for cid in chunk_ids])
+
+    async def relevant_for_concept(self, workspace_id: str, concept: str, top_k: int = 6) -> list[RetrievedPassage]:
+        """Passages that really discuss a concept.
+
+        Embedding similarity alone is not discriminative (unrelated chunks of the same domain score 0.6-0.7
+        with BGE), so a passage must also mention most of the concept's key terms.
+        """
+        terms = concept_terms(concept)
+        hits = await self.search(workspace_id, concept, top_k=top_k)
+        return [h for h in hits if h.score >= self.c.settings.retrieval_min_score
+                and term_overlap(terms, h.text) >= 0.6]

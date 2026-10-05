@@ -3,7 +3,7 @@
 Coverage modes:
 - strict: only concepts that were actually covered (coverage >= researched, or in the selected notes) and
   that have evidence passages; every question must cite the provided passages and pass a similarity check.
-- expanded: covered concepts plus closely related *researched* graph neighbours; questions may apply them to
+- expanded: covered concepts plus related researched concepts from the same or neighbouring roadmap phases; questions may apply them to
   new scenarios or connect them, but must not introduce unresearched subject matter (flagged if they do).
 """
 
@@ -87,8 +87,8 @@ Write for the stated student level; make difficulty match the slot (easy = recal
 medium = application, hard = analysis/multi-step). Avoid duplicate or near-duplicate questions.
 {UNTRUSTED_POLICY}"""
 
-STRICT_RULE = ("COVERAGE MODE STRICT: every question must be answerable using only the provided passages and "
-               "facts. Cite the passages you used.")
+STRICT_RULE = ("COVERAGE MODE STRICT: every question must be answerable using only the provided passages. "
+               "Cite the passages you used.")
 EXPANDED_RULE = ("COVERAGE MODE EXPANDED: questions may apply the covered concepts to new examples or connect "
                  "related covered concepts, but must not require knowledge of topics absent from the provided "
                  "material. Cite passages that underpin each question.")
@@ -114,6 +114,13 @@ class AssessmentService:
             report["scope_source"] = "selected_notes"
         else:
             base = await self.c.coverage.covered_concept_keys(ws_id, "researched")
+            if not base:  # nothing recorded yet: check the roadmap's concepts against the stored sources
+                rm = await self.c.roadmap.current(ws_id)
+                if rm is not None:
+                    await self.c.coverage.refresh_researched(
+                        ws_id, [(it.concept_key, it.title) for ph in rm.phases if ph.included
+                                for it in ph.items if it.included])
+                    base = await self.c.coverage.covered_concept_keys(ws_id, "researched")
             report["scope_source"] = "coverage_records"
         if cfg.topics:
             requested = list(dict.fromkeys(cfg.topics))
@@ -121,40 +128,35 @@ class AssessmentService:
             if cfg.coverage_mode == "strict" and excluded:
                 report["excluded_topics_not_covered"] = excluded
             base = [t for t in requested if t in base] if cfg.coverage_mode == "strict" else requested
-        names: dict[str, str] = {}
-        ents = await self.c.graph.entities_by_ids(ws_id, base)
-        names.update({e["id"]: e["name"] for e in ents})
-        for k in base:
-            if k not in names and k in recs:
-                names[k] = recs[k].concept_name
+        names = {k: recs[k].concept_name for k in base if k in recs}
+        rm = await self.c.roadmap.current(ws_id)
+        for ph in rm.phases if rm else []:
+            for it in ph.items:
+                names.setdefault(it.concept_key, it.title)
         scope = [{"key": k, "name": names[k], "related": False} for k in base if k in names]
         if not cfg.topics:  # deterministic order -> reproducible blueprints
             scope.sort(key=lambda c: (c["name"].lower(), c["key"]))
-        if cfg.coverage_mode == "expanded" and scope:
+        if cfg.coverage_mode == "expanded" and scope and rm is not None:
+            # related = researched concepts in the same or neighbouring roadmap phases
             keys = {c["key"] for c in scope}
-            for c in list(scope)[:20]:
-                try:
-                    nb = await self.c.graph.neighborhood(ws_id, c["key"], depth=1, limit=8)
-                except NotFoundError:
-                    continue
-                for n in nb["nodes"]:
-                    if n["id"] not in keys:
-                        keys.add(n["id"])
-                        scope.append({"key": n["id"], "name": n["name"], "related": True})
+            phases = [ph for ph in rm.phases if ph.included]
+            phase_of = {it.concept_key: i for i, ph in enumerate(phases) for it in ph.items if it.included}
+            near = {j for c in scope if c["key"] in phase_of for j in (phase_of[c["key"]] - 1, phase_of[c["key"]],
+                                                                       phase_of[c["key"]] + 1)}
+            researched = set(await self.c.coverage.covered_concept_keys(ws_id, "researched"))
+            for j in sorted(near):
+                if 0 <= j < len(phases):
+                    for it in phases[j].items:
+                        if it.included and it.concept_key not in keys and it.concept_key in researched:
+                            keys.add(it.concept_key)
+                            scope.append({"key": it.concept_key, "name": it.title, "related": True})
             report["related_concepts_added"] = sum(1 for c in scope if c["related"])
         report["scope_size"] = len(scope)
         return scope, report
 
-    async def concept_material(self, ws_id: str, concept: dict) -> tuple[list[dict], list[Any]]:
-        facts = await self.c.graph.facts_for_entities(ws_id, [concept["key"]], limit=8)
-        chunk_ids = await self.c.graph.evidence_chunks_for_entities(ws_id, [concept["key"]], limit=4)
-        passages = await self.c.retrieval.chunks_by_ids(ws_id, chunk_ids)
-        if len(passages) < 2:
-            extra = await self.c.retrieval.search(ws_id, concept["name"], top_k=3,
-                                                  min_score=self.settings.retrieval_min_score)
-            seen = {p.chunk_id for p in passages}
-            passages += [p for p in extra if p.chunk_id not in seen]
-        return facts, passages[:4]
+    async def concept_material(self, ws_id: str, concept: dict) -> list[Any]:
+        """Up to 4 passages that really discuss the concept."""
+        return (await self.c.retrieval.relevant_for_concept(ws_id, concept["name"]))[:4]
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -188,8 +190,8 @@ class AssessmentService:
         for c in scope:
             material[c["key"]] = await self.concept_material(ws.id, c)
         if cfg.coverage_mode == "strict":
-            ungrounded = [c["name"] for c in scope if not material[c["key"]][1]]
-            scope = [c for c in scope if material[c["key"]][1]]
+            ungrounded = [c["name"] for c in scope if not material[c["key"]]]
+            scope = [c for c in scope if material[c["key"]]]
             if ungrounded:
                 scope_report["dropped_without_evidence"] = ungrounded
         blueprint = build_blueprint(a.id, cfg, scope)
@@ -243,11 +245,8 @@ class AssessmentService:
         out_tokens = output_budget(self.c.llm, "smart", 6000)
         material_budget = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1500)
         markers: dict[str, Any] = {}
-        fact_lines: list[str] = []
         for key in dict.fromkeys(sl.concept_key for sl in batch):
-            facts, passages = material.get(key, ([], []))
-            fact_lines += [f"- {f['text']}" for f in facts[:6]]
-            for p in passages:
+            for p in material.get(key, []):
                 if all(m.chunk_id != p.chunk_id for m in markers.values()):
                     markers[f"S{len(markers) + 1}"] = p
         slot_lines = []
@@ -264,9 +263,9 @@ class AssessmentService:
             f"{STRICT_RULE if cfg.coverage_mode == 'strict' else EXPANDED_RULE}\n"
             f"Teacher instructions: {cfg.custom_instructions or '-'}\n\nSlots:\n" + "\n".join(slot_lines) +
             "\n\nAlready written questions (do not duplicate):\n" + ("\n".join(f"- {o}" for o in others) or "-") +
-            "\n\nFacts:\n" + ("\n".join(fit_items(fact_lines, int(material_budget * 0.25))) or "-") + "\n\nPassages:\n" +
+            "\n\nPassages:\n" +
             "\n\n".join(fit_items([untrusted("source", p.text, id=m, title=p.title[:100])
-                                    for m, p in markers.items()], int(material_budget * 0.6))))
+                                    for m, p in markers.items()], int(material_budget * 0.85))))
         out = await generate_structured(self.c.llm, task="questions", system=GEN_SYSTEM, user=user,
                                         schema=GenQuestionBatch, tier="smart", max_tokens=out_tokens)
         wanted = {sl.slot_id for sl in batch}
