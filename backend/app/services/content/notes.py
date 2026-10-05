@@ -10,7 +10,6 @@ reference list of real sources.
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
@@ -21,6 +20,7 @@ from app.core.ids import new_id
 from app.core.logging import get_logger
 from app.core.tokens import fit_items
 from app.db.models import NotesDocument, ResearchSession, Source, Workspace
+from app.llm.citations import rewrite_citations
 from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, prompt_budget, untrusted
 from app.services.knowledge.service import workspace_lock
 
@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from app.container import Container
 
 log = get_logger(__name__)
-_MARKER_RE = re.compile(r"\[(S\d{1,3})\]")
 
 
 class NotesConfig(BaseModel):
@@ -228,21 +227,24 @@ class NotesService:
                  ref_numbers: dict[str, int]) -> tuple[str, list[str]]:
         used: list[str] = []
 
-        def sub(m: re.Match) -> str:
-            p = markers.get(m.group(1))
+        def render(marker: str) -> str:
+            p = markers.get(marker)
             if p is None:
-                return ""
+                return ""  # cited a passage that was not provided: drop it
             sid = p["source_id"]
             if sid not in ref_numbers:
                 ref_numbers[sid] = len(ref_numbers) + 1
             used.append(sid)
             return f"[{ref_numbers[sid]}]"
 
-        parts = [_MARKER_RE.sub(sub, out.body_markdown.strip())]
+        def cite(text: str) -> str:
+            return rewrite_citations(text, render)
+
+        parts = [cite(out.body_markdown.strip())]
 
         def bullets(title: str, items: list[str]) -> None:
             if items:
-                parts.append(f"#### {title}\n" + "\n".join(f"- {_MARKER_RE.sub(sub, i)}" for i in items))
+                parts.append(f"#### {title}\n" + "\n".join(f"- {cite(i)}" for i in items))
 
         bullets("Key takeaways", out.key_takeaways)
         if cfg.kind == "teacher":
@@ -252,7 +254,7 @@ class NotesService:
             if cfg.include_discussion_prompts:
                 bullets("Discussion prompts", out.discussion_prompts)
         if cfg.include_exercises and out.practice_exercises:
-            parts.append("#### Practice\n" + "\n".join(f"{i}. {_MARKER_RE.sub(sub, e)}"
+            parts.append("#### Practice\n" + "\n".join(f"{i}. {cite(e)}"
                                                        for i, e in enumerate(out.practice_exercises, 1)))
         return "\n\n".join(parts), list(dict.fromkeys(used))
 

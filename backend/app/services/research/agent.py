@@ -20,6 +20,7 @@ from app.core.ids import normalize_key, sha256_text
 from app.core.logging import get_logger
 from app.db.models import Message, Preference, ResearchSession, SearchCache, Workspace
 from app.jobs.queue import enqueue
+from app.llm.citations import cited_markers, rewrite_citations
 from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget
 from app.providers.search.base import SearchHit
 from app.services.conversation.context import ContextInputs, build_context, make_budget
@@ -43,7 +44,6 @@ FAMILIARITY = {
 }
 
 _URL_RE = re.compile(r"https?://[^\s)\]>\"']+")
-_MARKER_RE = re.compile(r"\[(S\d{1,3})\]")
 
 
 class NavigationAction(BaseModel):
@@ -364,12 +364,11 @@ class ResearchAgent:
     @staticmethod
     def _ground(answer: AnswerOutput, allowed: dict[str, RetrievedPassage]) -> tuple[str, list[dict]]:
         """Keep only citation markers for passages actually provided; strip URLs not from those sources."""
-        text = answer.answer_markdown
-        text = _MARKER_RE.sub(lambda m: m.group(0) if m.group(1) in allowed else "", text)
+        text = rewrite_citations(answer.answer_markdown, lambda m: f"[{m}]" if m in allowed else "")
         allowed_urls = {p.url for p in allowed.values() if p.url}
         text = _URL_RE.sub(lambda m: m.group(0) if m.group(0).rstrip(".,;") in allowed_urls
                            else "[link removed: not from a retrieved source]", text)
-        used = list(dict.fromkeys(_MARKER_RE.findall(text) + [c for c in answer.cited_sources if c in allowed]))
+        used = list(dict.fromkeys(cited_markers(text) + [c for c in answer.cited_sources if c in allowed]))
         citations = [{"marker": m, "source_id": allowed[m].source_id, "chunk_id": allowed[m].chunk_id,
                       "title": allowed[m].title, "url": allowed[m].url,
                       "snippet": allowed[m].text[:280]} for m in used if m in allowed]

@@ -341,10 +341,10 @@ async def test_grounding_strips_invented_citations_and_urls(client, worker, fake
     wid = ws["id"]
     sid = (await client.get(f"/api/workspaces/{wid}/overview")).json()["latest_session_id"]
     await chat(client, worker, wid, sid, "Please research qubits")
-    fake_llm.script("answer", {"answer_markdown": "Qubits [S1] are cool [S99]. See https://evil.example/x",
+    fake_llm.script("answer", {"answer_markdown": "Qubits [S1] are cool [S99]【S77】. See https://evil.example/x",
                                "cited_sources": ["S1", "S42"], "concepts_explained": ["Qubit"]})
     msg = await chat(client, worker, wid, sid, "What is a qubit?")
-    assert "[S99]" not in msg["content"] and "evil.example" not in msg["content"]
+    assert "[S99]" not in msg["content"] and "S77" not in msg["content"] and "evil.example" not in msg["content"]
     assert [c["marker"] for c in msg["citations"]] == ["S1"]
 
 

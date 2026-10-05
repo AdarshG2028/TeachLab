@@ -222,3 +222,15 @@ def test_pdf_answer_free_view_has_no_answer_fields():
     from app.services.assessment.schemas import StudentQuestionView
 
     assert not {"answer", "explanation", "rubric", "correct_choice"} & set(StudentQuestionView.model_fields)
+
+
+def test_citation_styles_are_parsed_validated_and_normalized():
+    from app.llm.citations import cited_markers, rewrite_citations
+
+    text = "A【S4】 B [S1, S2] C［S3］ D【S99】 E [S2][S2] F [not a cite] G [S10]x"
+    assert cited_markers(text) == ["S4", "S1", "S2", "S3", "S99", "S10"]
+    allowed = {"S1", "S2", "S4"}
+    out = rewrite_citations(text, lambda m: f"[{m}]" if m in allowed else "")
+    assert out == "A[S4] B [S1][S2] C D E [S2][S2] F [not a cite] G x"
+    # one source behind two markers collapses to a single reference inside a group
+    assert rewrite_citations("x [S1, S2]", lambda m: "[1]") == "x [1]"
