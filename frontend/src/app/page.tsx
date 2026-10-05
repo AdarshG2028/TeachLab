@@ -18,27 +18,37 @@ export default function Home() {
   useEffect(() => load(), [load]);
 
   return (
-    <div className="space-y-4">
-      <UserSwitcher onChange={load} />
+    <div className="space-y-5">
+      <section className="card-dark fade-in">
+        <p className="label">● Teaching research workspace</p>
+        <h1 className="gradient-text max-w-2xl text-4xl font-bold leading-tight">
+          Research it once. Teach it with confidence.
+        </h1>
+        <p className="muted mt-2 max-w-xl text-sm">
+          Build a roadmap, learn each phase, then get notes, a test and an answer key as PDFs, all grounded in real sources.
+        </p>
+        <div className="relative z-10 mt-4 text-white"><UserSwitcher onChange={load} /></div>
+      </section>
       <ErrorText error={error} />
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="card">
-          <h2 className="mb-2 text-lg font-semibold">Your workspaces</h2>
-          {items.length === 0 && <p className="text-sm text-slate-500">No workspaces yet.</p>}
-          <ul className="divide-y divide-slate-100">
-            {items.map((w) => (
-              <li key={w.id} className="flex items-center justify-between py-2">
+        <section className="space-y-3">
+          <h2 className="px-1 text-lg font-semibold">Your workspaces</h2>
+          {items.length === 0 && <p className="muted px-1 text-sm">No workspaces yet. Create your first one.</p>}
+          {items.map((w, i) => (
+            <a key={w.id} href={`/workspaces/${w.id}`}
+              className={`${i % 2 === 0 ? "card-dark" : "card card-glow"} fade-in block transition hover:-translate-y-0.5`}>
+              <div className="relative z-10 flex items-start justify-between gap-3">
                 <div>
-                  <a className="font-medium hover:underline" href={`/workspaces/${w.id}`}>{w.title}</a>
-                  <p className="text-xs text-slate-500">
-                    {LEVELS[w.familiarity_level]?.label.split(" — ")[0]} · {w.audience || "audience n/a"} · updated{" "}
-                    {new Date(w.updated_at).toLocaleString()}
+                  <p className="label"><span className="dot mr-1" />{LEVELS[w.familiarity_level]?.label.split(" — ")[0]}</p>
+                  <h3 className="text-lg font-semibold leading-snug">{w.title}</h3>
+                  <p className="muted mt-1 text-xs">
+                    {w.audience || "audience n/a"} · updated {new Date(w.updated_at).toLocaleDateString()}
                   </p>
                 </div>
-                <a className="btn-secondary" href={`/workspaces/${w.id}`}>Resume</a>
-              </li>
-            ))}
-          </ul>
+                <span className={i % 2 === 0 ? "btn-accent" : "btn"}>Resume →</span>
+              </div>
+            </a>
+          ))}
         </section>
         <WorkspaceForm
           busy={busy}

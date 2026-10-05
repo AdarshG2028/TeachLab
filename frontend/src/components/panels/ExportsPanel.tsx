@@ -63,10 +63,10 @@ export function ExportsPanel({ workspaceId }: { workspaceId: string }) {
       </div>
       <div className="card text-sm">
         <h3 className="mb-2 font-semibold">Downloads</h3>
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-black/5">
           {artifacts.map((a) => (
             <li key={a.id} className="flex items-center justify-between py-1">
-              <span>{a.title} <span className="text-xs text-slate-500">· {a.kind} · {(a.size_bytes / 1024).toFixed(0)} KB</span></span>
+              <span>{a.title} <span className="text-xs text-muted">· {a.kind} · {(a.size_bytes / 1024).toFixed(0)} KB</span></span>
               <a className="btn-secondary" href={Api.downloadUrl(workspaceId, a.id)}>Download</a>
             </li>
           ))}

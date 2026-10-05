@@ -52,7 +52,7 @@ export function WorkspaceForm({ onSubmit, busy }: { onSubmit: (b: WorkspaceCreat
           <label key={l.value} className="mt-1 flex items-start gap-2 text-sm">
             <input type="radio" name="level" checked={form.familiarity_level === l.value}
               onChange={() => set("familiarity_level", l.value)} />
-            <span><b>{l.label}</b><br /><span className="text-slate-500">{l.hint}</span></span>
+            <span><b>{l.label}</b><br /><span className="text-muted">{l.hint}</span></span>
           </label>
         ))}
       </fieldset>

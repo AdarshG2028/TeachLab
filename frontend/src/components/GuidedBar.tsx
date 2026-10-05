@@ -12,7 +12,7 @@ export function GuidedBar({ roadmap, currentPhaseKey, busy, onSend }: {
   const current = idx >= 0 ? phases[idx] : null;
 
   return (
-    <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-sm" data-testid="guided-bar">
+    <div className="card-dark mb-3 !rounded-2xl !p-4 text-sm" data-testid="guided-bar">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           {!roadmap && <span>No roadmap yet. Start to research the topic and plan your phases.</span>}
@@ -23,14 +23,14 @@ export function GuidedBar({ roadmap, currentPhaseKey, busy, onSend }: {
           {finished && <span><b>All {phases.length} phases completed.</b></span>}
         </div>
         <div className="flex gap-1">
-          {!roadmap && <button className="btn" disabled={busy} onClick={() => onSend("start")}>Start: build my roadmap</button>}
+          {!roadmap && <button className="btn-accent" disabled={busy} onClick={() => onSend("start")}>Start: build my roadmap</button>}
           {roadmap && !finished && (
-            <button className="btn" disabled={busy} onClick={() => onSend("next")}>
+            <button className="btn-accent" disabled={busy} onClick={() => onSend("next")}>
               {current ? "Next phase →" : "Start phase 1 →"}
             </button>
           )}
           {roadmap && (
-            <button className={finished ? "btn" : "btn-secondary"} disabled={busy}
+            <button className={finished ? "btn-accent" : "btn-secondary"} disabled={busy}
               onClick={() => onSend("generate teaching pack")}>Generate teaching pack</button>
           )}
         </div>
@@ -39,8 +39,8 @@ export function GuidedBar({ roadmap, currentPhaseKey, busy, onSend }: {
         <ol className="mt-2 flex gap-1" aria-label="phase progress">
           {phases.map((p, i) => (
             <li key={p.key} title={`Phase ${i + 1}: ${p.title} (${p.status.replace("_", " ")})`}
-              className={`h-1.5 flex-1 rounded ${p.status === "completed" ? "bg-emerald-500"
-                : p.key === currentPhaseKey ? "bg-amber-400" : p.status === "skipped" ? "bg-slate-300" : "bg-slate-200"}`} />
+              className={`h-2 flex-1 rounded-full ${p.status === "completed" ? "bg-aqua shadow-[0_0_10px_var(--color-aqua)]"
+                : p.key === currentPhaseKey ? "bg-white" : p.status === "skipped" ? "bg-white/20" : "bg-white/10"}`} />
           ))}
         </ol>
       )}

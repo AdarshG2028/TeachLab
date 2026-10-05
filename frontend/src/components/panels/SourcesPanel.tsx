@@ -40,11 +40,11 @@ export function SourcesPanel({ workspaceId, onActivity }: { workspaceId: string;
         </div>
         <div className="card">
           <h3 className="mb-2 font-semibold">Sources ({sources.length})</h3>
-          <ul className="divide-y divide-slate-100 text-sm">
+          <ul className="divide-y divide-black/5 text-sm">
             {sources.map((s) => (
-              <li key={s.id} className="cursor-pointer py-2 hover:bg-slate-50" onClick={() => Api.source(workspaceId, s.id).then(setDetail)}>
+              <li key={s.id} className="cursor-pointer py-2 hover:bg-white/60" onClick={() => Api.source(workspaceId, s.id).then(setDetail)}>
                 <p className="font-medium">{s.title}</p>
-                <p className="text-xs text-slate-500">{s.origin} · {s.status} · retrieved {new Date(s.retrieved_at).toLocaleDateString()}
+                <p className="text-xs text-muted">{s.origin} · {s.status} · retrieved {new Date(s.retrieved_at).toLocaleDateString()}
                   {s.published_at ? ` · published ${s.published_at}` : ""}</p>
               </li>
             ))}
@@ -52,13 +52,13 @@ export function SourcesPanel({ workspaceId, onActivity }: { workspaceId: string;
         </div>
       </div>
       <aside className="card max-h-[80vh] overflow-y-auto text-sm">
-        {!detail ? <p className="text-slate-500">Select a source to inspect its stored text and chunks.</p> : (
+        {!detail ? <p className="text-muted">Select a source to inspect its stored text and chunks.</p> : (
           <div>
             <h3 className="font-semibold">{detail.title}</h3>
-            {detail.url && <a className="text-xs text-blue-700 hover:underline" href={detail.url} target="_blank" rel="noreferrer">{detail.url}</a>}
-            <p className="text-xs text-slate-500">embedding: {detail.embedding_model ?? "not indexed"} · {detail.chunks.length} chunks</p>
+            {detail.url && <a className="text-xs text-teal-ink hover:underline" href={detail.url} target="_blank" rel="noreferrer">{detail.url}</a>}
+            <p className="text-xs text-muted">embedding: {detail.embedding_model ?? "not indexed"} · {detail.chunks.length} chunks</p>
             {detail.chunks.map((c) => (
-              <div key={c.id} className="mt-2 rounded bg-slate-50 p-2 text-xs">
+              <div key={c.id} className="mt-2 rounded bg-white/60 p-2 text-xs">
                 <b>#{c.idx}</b> {c.heading && <i>({c.heading})</i>} {c.text.slice(0, 600)}
               </div>
             ))}

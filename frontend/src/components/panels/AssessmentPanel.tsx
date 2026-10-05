@@ -111,8 +111,8 @@ export function AssessmentPanel({ workspaceId, defaultLevel }: { workspaceId: st
         <div className="card text-sm">
           <h3 className="mb-1 font-semibold">Tests</h3>
           <ul>{list.map((a) => (
-            <li key={a.id}><button className="text-blue-700 hover:underline" onClick={() => open(a.id)}>{a.title}</button>
-              <span className="text-xs text-slate-500"> · {a.status} · {a.total_marks} marks</span></li>
+            <li key={a.id}><button className="text-teal-ink hover:underline" onClick={() => open(a.id)}>{a.title}</button>
+              <span className="text-xs text-muted"> · {a.status} · {a.total_marks} marks</span></li>
           ))}</ul>
         </div>
       </div>
@@ -130,7 +130,7 @@ function AssessmentView({ workspaceId, a, reload }: { workspaceId: string; a: As
       <div className={`card text-sm ${report.consistent ? "" : "border-amber-400"}`}>
         <h3 className="font-semibold">{a.title} — {report.total_marks} marks · {a.questions.length} questions</h3>
         <p>{report.consistent ? "Counts and marks match the configuration." : `Issues: ${(report.problems ?? []).join("; ")}`}</p>
-        <p className="text-xs text-slate-500">{report.flagged_questions} question(s) flagged for review · scope: {JSON.stringify(report.scope)}</p>
+        <p className="text-xs text-muted">{report.flagged_questions} question(s) flagged for review · scope: {JSON.stringify(report.scope)}</p>
         <JobProgress jobId={jobId} label="Regenerate" onDone={() => { setJobId(null); reload(); }} />
       </div>
       {a.questions.map((q, i) => <QuestionCard key={q.id} n={i + 1} q={q} workspaceId={workspaceId} aid={a.id}
@@ -150,10 +150,10 @@ function QuestionCard({ n, q, workspaceId, aid, onChanged, onJob }: {
   return (
     <div className="card text-sm">
       <div className="flex justify-between">
-        <span className="text-xs text-slate-500">Q{n} · {q.section_id} · {q.type} · {q.difficulty} · {q.marks} marks · {q.origin}</span>
+        <span className="text-xs text-muted">Q{n} · {q.section_id} · {q.type} · {q.difficulty} · {q.marks} marks · {q.origin}</span>
         <span className="flex gap-2 text-xs">
-          <button className="text-blue-700 hover:underline" onClick={() => setEdit(!edit)}>edit</button>
-          <button className="text-blue-700 hover:underline" onClick={async () => {
+          <button className="text-teal-ink hover:underline" onClick={() => setEdit(!edit)}>edit</button>
+          <button className="text-teal-ink hover:underline" onClick={async () => {
             const ins = prompt("Instructions for the replacement question (optional)") ?? "";
             onJob((await Api.regenerateQuestion(workspaceId, aid, q.id, ins)).id);
           }}>regenerate</button>
@@ -171,7 +171,7 @@ function QuestionCard({ n, q, workspaceId, aid, onChanged, onJob }: {
         </div>
       )}
       {q.choices.length > 0 && <ol className="ml-5 list-[upper-alpha]">{q.choices.map((c) => <li key={c}>{c}</li>)}</ol>}
-      <details className="mt-1 text-xs"><summary className="cursor-pointer text-slate-500">Answer key (teacher only)</summary>
+      <details className="mt-1 text-xs"><summary className="cursor-pointer text-muted">Answer key (teacher only)</summary>
         <p><b>Answer:</b> {answer.choice_label ? `(${answer.choice_label}) ` : ""}{answer.text ?? `${answer.value} ${answer.units ?? ""}`}</p>
         {q.explanation && <p><b>Explanation:</b> {q.explanation}</p>}
         {q.rubric.length > 0 && <ul>{q.rubric.map((r, i) => <li key={i}>{String(r.criterion)} — {String(r.marks)}</li>)}</ul>}

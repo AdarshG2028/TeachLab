@@ -82,23 +82,23 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
             const guided = (m.meta as { guided?: { phase_index?: number; phase_count?: number; lesson?: unknown;
               pack_job_id?: string } | null })?.guided;
             return (
-              <div key={m.id} className={m.role === "user" ? "ml-12 rounded-lg bg-slate-100 p-3" : "mr-6 rounded-lg border border-slate-200 p-3"}>
-                <div className="mb-1 text-xs font-semibold uppercase text-slate-400">
+              <div key={m.id} className={`fade-in ${m.role === "user" ? "bubble-user" : "bubble-assistant"}`}>
+                <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wider ${m.role === "user" ? "text-white/50" : "text-muted"}`}>
                   {m.role}{guided?.lesson ? ` · lesson · phase ${guided.phase_index} of ${guided.phase_count}` : ""}
                 </div>
                 {m.role === "assistant" ? <Markdown>{m.content}</Markdown> : <p className="whitespace-pre-wrap text-sm">{m.content}</p>}
                 {research?.performed && (
-                  <p className="mt-1 text-xs text-slate-500">Researched: {research.queries?.join("; ")} — {research.new_sources} new,{" "}
+                  <p className="mt-1 text-xs text-muted">Researched: {research.queries?.join("; ")} — {research.new_sources} new,{" "}
                     {research.reused_sources} reused sources</p>
                 )}
                 {guided?.pack_job_id && <PackStatus workspaceId={workspaceId} jobId={guided.pack_job_id} />}
                 {limitations && <p className="mt-1 text-xs text-amber-700">Evidence note: {limitations}</p>}
                 {citations.length > 0 && (
-                  <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-xs">
+                  <ul className="mt-2 space-y-1 border-t border-black/5 pt-2 text-xs">
                     {citations.map((c) => (
                       <li key={c.marker} title={c.snippet}>
                         <b>[{c.marker}]</b>{" "}
-                        {c.url ? <a className="text-blue-700 hover:underline" href={c.url} target="_blank" rel="noreferrer">{c.title}</a> : c.title}
+                        {c.url ? <a className="text-teal-ink hover:underline" href={c.url} target="_blank" rel="noreferrer">{c.title}</a> : c.title}
                       </li>
                     ))}
                   </ul>
@@ -114,7 +114,7 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
           <textarea className="input" rows={2} value={text} onChange={(e) => setText(e.target.value)}
             placeholder="Ask a question, request research, or say 'next phase'…"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(e); } }} />
-          <button className="btn" disabled={!!jobId || !text.trim()}>Send</button>
+          <button className="btn-accent" disabled={!!jobId || !text.trim()}>Send</button>
         </form>
       </div>
       <aside className="card space-y-2 text-sm">
@@ -124,7 +124,7 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
           <ul className="list-disc pl-4 text-xs">{(state.unresolved_questions ?? []).map((q) => <li key={q}>{q}</li>)}</ul>
         </div>
         {session?.rolling_summary && (
-          <details><summary className="cursor-pointer text-xs text-slate-500">Conversation summary</summary>
+          <details><summary className="cursor-pointer text-xs text-muted">Conversation summary</summary>
             <p className="mt-1 text-xs">{session.rolling_summary}</p></details>
         )}
       </aside>

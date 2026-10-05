@@ -58,14 +58,14 @@ export function RoadmapPanel({ workspaceId, sessionId, level, onStartPhase }: {
           try { setJobId((await Api.generateRoadmap(workspaceId, instructions)).id); } catch (e) { setError(e); }
         }}>{rm ? "Regenerate (keeps your edits)" : "Generate roadmap"}</button>
         {rm && !edit && <button className="btn-secondary" onClick={() => setEdit(toEdit(rm))}>Edit</button>}
-        {level === 2 && !rm && <span className="text-xs text-slate-500">Optional in advanced mode.</span>}
+        {level === 2 && !rm && <span className="text-xs text-muted">Optional in advanced mode.</span>}
       </div>
       <JobProgress jobId={jobId} label="Roadmap" onDone={() => { setJobId(null); load(); }} />
       <ErrorText error={error} />
 
       {rm && !edit && (
         <>
-          <p className="text-sm text-slate-600">v{rm.version} · {rm.organization} · {rm.origin} — {rm.summary}</p>
+          <p className="text-sm text-muted">v{rm.version} · {rm.organization} · {rm.origin} — {rm.summary}</p>
           {rm.phases.map((p, i) => <PhaseCard key={p.id} p={p} index={i} workspaceId={workspaceId}
             sessionId={sessionId} level={level} onChanged={load} onJob={setJobId} onStartPhase={onStartPhase} />)}
         </>
@@ -113,12 +113,12 @@ function PhaseCard({ p, index, workspaceId, sessionId, level, onChanged, onJob, 
   p: RoadmapPhase; index: number; workspaceId: string; sessionId: string; level: number;
   onChanged: () => void; onJob: (id: string) => void; onStartPhase: () => void;
 }) {
-  const statusColor = { completed: "bg-emerald-100 text-emerald-800", in_progress: "bg-amber-100 text-amber-800",
-    skipped: "bg-slate-200 text-slate-600", not_started: "bg-slate-100 text-slate-600" }[p.status] ?? "";
+  const statusColor = { completed: "bg-aqua-soft text-teal-ink", in_progress: "bg-amber-100 text-amber-800",
+    skipped: "bg-black/10 text-muted", not_started: "bg-white/60 text-muted" }[p.status] ?? "";
   return (
     <div className={`card ${p.included ? "" : "opacity-50"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Phase {index + 1}: {p.title} {p.teacher_edited && <span className="badge bg-blue-100 text-blue-800">edited</span>}</h3>
+        <h3 className="font-semibold">Phase {index + 1}: {p.title} {p.teacher_edited && <span className="badge bg-aqua-soft text-teal-ink">edited</span>}</h3>
         <div className="flex gap-1">
           <span className={`badge ${statusColor}`}>{p.status.replace("_", " ")}</span>
           {sessionId && (
@@ -133,19 +133,19 @@ function PhaseCard({ p, index, workspaceId, sessionId, level, onChanged, onJob, 
           <button className="btn-secondary" onClick={async () => onJob((await Api.regeneratePhase(workspaceId, p.key)).id)}>Regenerate</button>
         </div>
       </div>
-      <p className="text-sm text-slate-600">{p.description}</p>
-      {p.objectives.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs text-slate-600">{p.objectives.map((o) => <li key={o}>{o}</li>)}</ul>}
+      <p className="text-sm text-muted">{p.description}</p>
+      {p.objectives.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs text-muted">{p.objectives.map((o) => <li key={o}>{o}</li>)}</ul>}
       <table className="mt-2 w-full text-xs">
-        <thead><tr className="text-left text-slate-500"><th>Concept</th>{STAGES.map((s) => <th key={s}>{s}</th>)}<th /></tr></thead>
+        <thead><tr className="text-left text-muted"><th>Concept</th>{STAGES.map((s) => <th key={s}>{s}</th>)}<th /></tr></thead>
         <tbody>
           {p.items.map((it) => {
             const cov = it.coverage as Record<string, unknown>;
             return (
-              <tr key={it.id} className={`border-t border-slate-100 ${it.included ? "" : "line-through opacity-50"}`}>
+              <tr key={it.id} className={`border-t border-black/5 ${it.included ? "" : "line-through opacity-50"}`}>
                 <td className="py-1">{it.title}{it.optional && " (optional)"}{it.teacher_edited && " ✎"}
                   {cov.self_reported_understanding ? <span className="ml-1 text-amber-700">(self-reported: {String(cov.self_reported_understanding)})</span> : null}</td>
                 {STAGES.map((s) => <td key={s}>{cov[s] ? "●" : "○"}</td>)}
-                <td><button className="text-blue-700 hover:underline" onClick={async () => {
+                <td><button className="text-teal-ink hover:underline" onClick={async () => {
                   await Api.markCoverage(workspaceId, { concept_key: it.concept_key, concept_name: it.title, stage: "completed",
                     value: !cov.completed });
                   onChanged();

@@ -16,7 +16,7 @@ export function UserSwitcher({ onChange }: { onChange?: (id: string) => void }) 
         onChange?.(id.trim());
       }}
     >
-      <span className="text-slate-500">Signed in as (dev)</span>
+      <span className="text-muted">Signed in as (dev)</span>
       <input className="input w-40" value={id} onChange={(e) => setId(e.target.value)} aria-label="user id" />
       <button className="btn-secondary" type="submit">Switch</button>
     </form>

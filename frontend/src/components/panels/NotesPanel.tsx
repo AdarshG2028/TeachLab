@@ -40,10 +40,10 @@ export function NotesPanel({ workspaceId }: { workspaceId: string }) {
       </div>
       <JobProgress jobId={jobId} label="Notes" onDone={() => { setJobId(null); load(); }} />
       <ErrorText error={error} />
-      {!doc && !jobId && <p className="text-sm text-slate-500">No {kind} notes yet.</p>}
+      {!doc && !jobId && <p className="text-sm text-muted">No {kind} notes yet.</p>}
       {doc && !editing && (
         <article className="card space-y-4">
-          <h2 className="text-lg font-semibold">{doc.title} <span className="text-xs text-slate-500">v{doc.version}{doc.edited ? " · edited" : ""}</span></h2>
+          <h2 className="text-lg font-semibold">{doc.title} <span className="text-xs text-muted">v{doc.version}{doc.edited ? " · edited" : ""}</span></h2>
           {doc.sections.map((s) => (
             <section key={String(s.id)}><h3 className="text-base font-semibold">{String(s.heading)}</h3><Markdown>{String(s.markdown)}</Markdown></section>
           ))}
@@ -60,7 +60,7 @@ export function NotesPanel({ workspaceId }: { workspaceId: string }) {
                 <textarea className="input font-mono text-xs" rows={12} value={s.markdown} onChange={(e) => setEditing({ ...editing,
                   sections: editing.sections.map((x, k) => k === i ? { ...x, markdown: e.target.value } : x) })} />
               </div>
-              <div className="max-h-80 overflow-y-auto rounded border border-slate-100 p-2"><Markdown>{s.markdown}</Markdown></div>
+              <div className="max-h-80 overflow-y-auto rounded border border-black/5 p-2"><Markdown>{s.markdown}</Markdown></div>
             </div>
           ))}
           <div className="flex gap-2">
