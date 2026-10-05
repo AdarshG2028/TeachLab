@@ -23,7 +23,7 @@ from app.core.ids import new_id, normalize_key, stable_id
 from app.core.logging import get_logger
 from app.core.tokens import fit_items
 from app.db.models import CoverageRecord, ResearchSession, RoadmapItem, RoadmapPhase, RoadmapVersion, Workspace
-from app.llm.structured import generate_structured, output_budget, prompt_budget
+from app.llm.structured import UNTRUSTED_POLICY, generate_structured, output_budget, prompt_budget, untrusted
 from app.services.conversation.memory import session_state
 from app.services.knowledge.ontology import entity_keys
 from app.services.knowledge.service import workspace_lock
@@ -64,7 +64,8 @@ causal organization; mix when appropriate. Divide the roadmap into coherent phas
 learning objectives and an ordered list of concept items. Put prerequisites before the concepts that need them.
 Prefer concepts that appear in the provided knowledge graph (they have been researched); you may add essential
 concepts that are missing, but keep names short and canonical. Respect teacher-locked phases/items exactly as given.
-Adapt depth to the student audience and the available time. Do not invent sources."""
+Adapt depth to the student audience and the available time. Do not invent sources.
+""" + UNTRUSTED_POLICY
 
 
 def phase_key(workspace_id: str, title: str) -> str:
@@ -119,7 +120,12 @@ class RoadmapService:
     # ------------------------------------------------------------------ generation
 
     async def generate(self, workspace_id: str, *, instructions: str = "", progress=None,
-                       only_phase_key: str | None = None) -> RoadmapVersion:
+                       only_phase_key: str | None = None, passages: list | None = None) -> RoadmapVersion:
+        """Generate a roadmap version from the graph outline and, optionally, raw research passages.
+
+        Passages let a roadmap be planned right after the first search, before slower graph extraction
+        has finished (guided beginner flow).
+        """
         async with self.c.db.session() as s:
             ws = await s.get(Workspace, workspace_id)
             if ws is None:
@@ -137,14 +143,20 @@ class RoadmapService:
         locked = self._locked_summary(prev, only_phase_key)
         out_tokens = output_budget(self.c.llm, "smart", 4000)
         material = prompt_budget(self.c.llm, "smart", out_tokens, overhead=1500)
+        graph_share, edge_share = (0.35, 0.15) if passages else (0.6, 0.4)
+        graph_text = "\n".join(fit_items(graph_lines, int(material * graph_share))) or "(no research yet)"
+        edge_text = "\n".join(fit_items(edge_lines, int(material * edge_share))) or "(none)"
+        passage_text = "\n\n".join(fit_items(
+            [untrusted("source", p.text[:1500], title=p.title[:100]) for p in passages or []], int(material * 0.5)))
         user = (
             f"Topic: {ws.topic}\nScope: {ws.description or '-'}\nAudience: {ws.audience or '-'} "
             f"({ws.academic_level or '-'})\nTeaching goals: {'; '.join(ws.teaching_goals or []) or '-'}\n"
             f"Teacher familiarity level: {ws.familiarity_level} (0=beginner,1=familiar,2=advanced)\n"
             f"Time available: {ws.time_available_minutes or 'unspecified'} minutes\n"
             f"Language: {ws.language}\n\n"
-            f"Knowledge graph concepts (researched):\n{chr(10).join(fit_items(graph_lines, int(material * 0.6))) or '(no research yet)'}\n\n"
-            f"Key relations:\n{chr(10).join(fit_items(edge_lines, int(material * 0.4))) or '(none)'}\n\n"
+            f"Knowledge graph concepts (researched):\n{graph_text}\n\n"
+            f"Key relations:\n{edge_text}\n\n"
+            + (f"Research passages:\n{passage_text}\n\n" if passage_text else "") +
             f"Teacher-locked phases/items to keep unchanged:\n{locked or '(none)'}\n\n"
             f"Teacher instructions: {instructions or '(none)'}"
         )
@@ -421,10 +433,18 @@ class RoadmapService:
             cur_idx = next((i for i, p in enumerate(phases) if p.key == state.get("current_phase_id")), None)
             cur = phases[cur_idx] if cur_idx is not None else None
             target: RoadmapPhase | None = None
+            finished = False
             if action in ("start_phase", "goto_phase", "revisit_phase"):
                 target = self._find_phase(phases, phase_ref) or (cur or phases[0])
             elif action == "next_phase":
-                target = phases[min((cur_idx if cur_idx is not None else -1) + 1, len(phases) - 1)]
+                if cur is not None and cur.status in ("in_progress", "not_started"):
+                    cur.status = "completed"  # moving on finishes the phase (concept mastery is not inferred)
+                    state["completed_phase_ids"] = list(dict.fromkeys(state["completed_phase_ids"] + [cur.key]))
+                if cur_idx is not None and cur_idx == len(phases) - 1:
+                    finished = True
+                    target = cur
+                else:
+                    target = phases[(cur_idx if cur_idx is not None else -1) + 1]
             elif action == "previous_phase":
                 target = phases[max((cur_idx or 0) - 1, 0)]
             elif action == "skip_phase":
@@ -450,7 +470,8 @@ class RoadmapService:
                             index_elements=["workspace_id", "concept_key"],
                             set_={"completed_at": now, "completed_origin": "explicit"}))
                 idx = phases.index(done)
-                target = phases[idx + 1] if idx + 1 < len(phases) else done
+                finished = idx + 1 >= len(phases)
+                target = phases[idx + 1] if not finished else done
             else:
                 return {"ok": False, "reason": f"unknown action {action}"}
             if target is not None:
@@ -461,7 +482,9 @@ class RoadmapService:
                 state["current_phase_id"] = target.key
             sess.state = state
             return {"ok": True, "action": action, "current_phase": target.title if target else None,
-                    "current_phase_key": target.key if target else None}
+                    "current_phase_key": target.key if target else None,
+                    "phase_index": phases.index(target) + 1 if target else None, "phase_count": len(phases),
+                    "finished": finished, "changed": target is not cur}
 
     async def set_phase_status(self, workspace_id: str, phase_key_: str, status: str) -> None:
         if status not in ("not_started", "in_progress", "completed", "skipped"):

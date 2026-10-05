@@ -52,15 +52,23 @@ class TokenBucket:
         self._last: float | None = None
         self._lock = asyncio.Lock()
 
-    async def acquire(self, amount: int) -> None:
+    async def acquire(self, amount: int, *, low_priority: bool = False) -> None:
+        """Wait until ``amount`` tokens are available.
+
+        Low-priority callers (background extraction/summaries) additionally leave a reserve of ~35% of the
+        per-minute budget untouched, so interactive requests (chat answers, lessons) are not starved.
+        """
         amount = min(amount, self.capacity)
-        async with self._lock:
-            while True:
+        needed = min(self.capacity, amount + (int(self.capacity * 0.35) if low_priority else 0))
+        while True:
+            async with self._lock:
                 now = self._clock()
                 if self._last is not None:
                     self.tokens = min(self.capacity, self.tokens + (now - self._last) * self.rate)
                 self._last = now
-                if self.tokens >= amount:
+                if self.tokens >= needed:
                     self.tokens -= amount
                     return
-                await asyncio.sleep((amount - self.tokens) / self.rate)
+                wait = (needed - self.tokens) / self.rate
+            # sleep outside the lock so a high-priority caller can take tokens meanwhile
+            await asyncio.sleep(min(wait, 5.0))

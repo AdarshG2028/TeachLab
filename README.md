@@ -76,6 +76,18 @@ cd ../frontend && npx openapi-typescript openapi.json -o src/lib/api-types.ts
 # or, with the API running:  pnpm gen:api
 ```
 
+## Guided learning (recommended for new topics)
+
+Create a workspace with familiarity **Beginner** and type **start** in the research chat, or press the
+button above the chat:
+
+1. You get a researched **roadmap** of 4-7 phases.
+2. **next** teaches each phase as a lesson, researching only what isn't covered yet, and shows "Phase n of m".
+3. At the end, **generate teaching pack** creates teacher and student notes, a question paper and a separate
+   answer key as PDFs, with download links right in the chat.
+
+The knowledge graph grows in the background throughout; open the *Knowledge graph* tab at any time.
+
 ## End-to-end demo
 
 The demo creates a topic and runs research, the graph update, the roadmap, the Level-0 phase tutorial, notes, assessment configuration, the answer key and PDF downloads. It goes through the real API and worker.

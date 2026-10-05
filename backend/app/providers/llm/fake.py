@@ -262,9 +262,12 @@ class FakeLLMProvider(LLMProvider):
         only = re.search(r"Regenerate ONLY the phase '([^']+)'", user)
         concepts = re.findall(r"^- (.+?) \((\w+); links=", user, re.M)
         topic = re.search(r"Topic: (.*)", user).group(1).strip()
-        if not concepts:
-            concepts = [(f"Introduction to {topic}", "Concept"), (f"Core ideas of {topic}", "Concept"),
-                        (f"Applications of {topic}", "Concept")]
+        if not concepts:  # no graph yet (guided kickoff): take concepts from the research passages
+            found = extract_rules(_tags("source", user))["entities"]
+            concepts = [(e["name"], e["category"]) for e in found][:12]
+        if len(concepts) < 4:
+            concepts += [(f"Introduction to {topic}", "Concept"), (f"Core ideas of {topic}", "Concept"),
+                         (f"Applications of {topic}", "Concept"), (f"Limitations of {topic}", "Concept")]
         events = sum(1 for _, cat in concepts if cat == "Event")
         org = "chronological" if events >= 2 else "prerequisite"
         names = [n for n, _ in concepts][:15]

@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Api, type Message, type Session } from "@/lib/api";
+import { Api, type Message, type Roadmap, type Session } from "@/lib/api";
 import { Markdown } from "@/components/Markdown";
 import { JobProgress } from "@/components/JobProgress";
 import { ErrorText } from "@/components/ErrorText";
+import { GuidedBar } from "@/components/GuidedBar";
+import { PackStatus } from "@/components/PackStatus";
 
 type Citation = { marker: string; title: string; url: string | null; snippet: string; source_id: string };
 
@@ -18,13 +20,16 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     if (!sessionId) return;
-    const [msgs, sess] = await Promise.all([Api.messages(workspaceId, sessionId), Api.session(workspaceId, sessionId)]);
+    const [msgs, sess, rm] = await Promise.all([Api.messages(workspaceId, sessionId), Api.session(workspaceId, sessionId),
+      Api.roadmap(workspaceId)]);
     setMessages(msgs);
     setSession(sess);
+    setRoadmap(rm);
     setTimeout(() => bottom.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }, [workspaceId, sessionId]);
 
@@ -36,18 +41,22 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
     setMessages((m) => [...older, ...m]);
   };
 
-  const send = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!text.trim()) return;
+  const sendText = async (content: string) => {
+    if (!content.trim() || jobId) return;
     try {
-      const turn = await Api.sendMessage(workspaceId, sessionId, text);
+      const turn = await Api.sendMessage(workspaceId, sessionId, content);
       setMessages((m) => [...m, turn.message]);
       setText("");
       setJobId(turn.job.id);
     } catch (err) { setError(err); }
   };
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendText(text);
+  };
 
-  const state = (session?.state ?? {}) as { unresolved_questions?: string[]; current_concept?: string };
+  const state = (session?.state ?? {}) as { unresolved_questions?: string[]; current_concept?: string;
+    current_phase_id?: string | null };
 
   return (
     <div className="grid gap-3 lg:grid-cols-[1fr_260px]">
@@ -63,20 +72,26 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
           }}>New session</button>
           {messages.length >= 50 && <button className="btn-secondary" onClick={loadOlder}>Load older</button>}
         </div>
+        <GuidedBar roadmap={roadmap} currentPhaseKey={state.current_phase_id ?? null} busy={!!jobId} onSend={sendText} />
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
           {messages.map((m) => {
             const citations = (m.citations ?? []) as Citation[];
             const research = (m.meta as { research?: { performed?: boolean; queries?: string[]; new_sources?: number;
               reused_sources?: number } })?.research;
             const limitations = (m.meta as { evidence_limitations?: string })?.evidence_limitations;
+            const guided = (m.meta as { guided?: { phase_index?: number; phase_count?: number; lesson?: unknown;
+              pack_job_id?: string } | null })?.guided;
             return (
               <div key={m.id} className={m.role === "user" ? "ml-12 rounded-lg bg-slate-100 p-3" : "mr-6 rounded-lg border border-slate-200 p-3"}>
-                <div className="mb-1 text-xs font-semibold uppercase text-slate-400">{m.role}</div>
+                <div className="mb-1 text-xs font-semibold uppercase text-slate-400">
+                  {m.role}{guided?.lesson ? ` · lesson · phase ${guided.phase_index} of ${guided.phase_count}` : ""}
+                </div>
                 {m.role === "assistant" ? <Markdown>{m.content}</Markdown> : <p className="whitespace-pre-wrap text-sm">{m.content}</p>}
                 {research?.performed && (
                   <p className="mt-1 text-xs text-slate-500">Researched: {research.queries?.join("; ")} — {research.new_sources} new,{" "}
                     {research.reused_sources} reused sources</p>
                 )}
+                {guided?.pack_job_id && <PackStatus workspaceId={workspaceId} jobId={guided.pack_job_id} />}
                 {limitations && <p className="mt-1 text-xs text-amber-700">Evidence note: {limitations}</p>}
                 {citations.length > 0 && (
                   <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-xs">

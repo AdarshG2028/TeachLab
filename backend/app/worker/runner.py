@@ -21,7 +21,7 @@ from app.container import Container
 from app.core.errors import AppError, ProviderError
 from app.core.logging import get_logger
 from app.db.models import Job, Workspace
-from app.jobs.queue import NOTIFY_CHANNEL, claim_next
+from app.jobs.queue import BACKGROUND_KINDS, NOTIFY_CHANNEL, claim_next
 
 log = get_logger(__name__)
 
@@ -74,6 +74,7 @@ class Worker:
         self._wake = asyncio.Event()
         self._stop = asyncio.Event()
         self._running: set[asyncio.Task] = set()
+        self._background_running = 0
 
     async def _listen(self) -> asyncpg.Connection | None:
         dsn = self.settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -95,7 +96,9 @@ class Worker:
         try:
             while not self._stop.is_set():
                 while len(self._running) < self.concurrency and not self._stop.is_set():
-                    job_id = await self._claim()
+                    # keep one slot free for interactive jobs when concurrency allows it
+                    allow_bg = self.concurrency == 1 or self._background_running < self.concurrency - 1
+                    job_id = await self._claim(allow_background=allow_bg)
                     if not job_id:
                         break
                     task = asyncio.create_task(self._execute(job_id))
@@ -124,9 +127,10 @@ class Worker:
             done += 1
         return done
 
-    async def _claim(self) -> str | None:
+    async def _claim(self, *, allow_background: bool = True) -> str | None:
         async with self.container.db.session() as s:
-            return await claim_next(s, self.worker_id, self.settings.worker_lease_seconds)
+            return await claim_next(s, self.worker_id, self.settings.worker_lease_seconds,
+                                    allow_background=allow_background)
 
     async def _heartbeat(self, job_id: str) -> None:
         interval = max(5, self.settings.worker_lease_seconds // 3)
@@ -140,6 +144,9 @@ class Worker:
         async with self.container.db.session() as s:
             job = (await s.execute(select(Job).where(Job.id == job_id))).scalar_one()
         structlog.contextvars.bind_contextvars(job_id=job.id, job_kind=job.kind, workspace_id=job.workspace_id)
+        background = job.kind in BACKGROUND_KINDS
+        if background:
+            self._background_running += 1
         heartbeat = asyncio.create_task(self._heartbeat(job.id))
         try:
             handler = self.handlers.get(job.kind)
@@ -156,6 +163,8 @@ class Worker:
             await self._fail(job, exc)
         finally:
             heartbeat.cancel()
+            if background:
+                self._background_running -= 1
             structlog.contextvars.clear_contextvars()
 
     async def _fail(self, job: Job, exc: Exception) -> None:

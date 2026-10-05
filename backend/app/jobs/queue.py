@@ -20,10 +20,12 @@ NOTIFY_CHANNEL = "teachlab_jobs"
 
 JOB_KINDS = {
     "chat_turn", "research", "graph_extract", "ingest_url", "ingest_upload", "generate_roadmap", "generate_notes",
-    "generate_assessment", "regenerate_question", "export_pdf", "rebuild_graph", "reindex_vectors",
+    "generate_assessment", "regenerate_question", "export_pdf", "generate_pack", "rebuild_graph", "reindex_vectors",
 }
 
 TERMINAL = {"succeeded", "failed", "cancelled"}
+# Long-running background work; interactive jobs (chat turns, lessons) are claimed first and keep a reserved slot.
+BACKGROUND_KINDS = ("graph_extract", "rebuild_graph", "reindex_vectors")
 
 
 async def enqueue(
@@ -64,7 +66,8 @@ CLAIM_SQL = text(
         WHERE ((status = 'queued' AND run_after <= now())
                OR (status = 'running' AND lease_until < now()))
           AND attempts < max_attempts
-        ORDER BY run_after, created_at
+          AND (:allow_background OR NOT (kind = ANY(:background)))
+        ORDER BY (kind = ANY(:background)), run_after, created_at
         FOR UPDATE SKIP LOCKED
         LIMIT 1
     )
@@ -82,9 +85,12 @@ EXPIRE_SQL = text(
 )
 
 
-async def claim_next(s: AsyncSession, worker_id: str, lease_seconds: int) -> str | None:
+async def claim_next(s: AsyncSession, worker_id: str, lease_seconds: int, *, allow_background: bool = True
+                     ) -> str | None:
     await s.execute(EXPIRE_SQL)
-    return (await s.execute(CLAIM_SQL, {"worker": worker_id, "lease": lease_seconds})).scalar_one_or_none()
+    return (await s.execute(CLAIM_SQL, {"worker": worker_id, "lease": lease_seconds,
+                                        "allow_background": allow_background,
+                                        "background": list(BACKGROUND_KINDS)})).scalar_one_or_none()
 
 
 async def cancel(s: AsyncSession, job: Job) -> None:

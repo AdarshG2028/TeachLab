@@ -50,6 +50,13 @@ Legend:
 - ✅ Coverage stages tracked separately (planned, researched, explained, discussed, completed)
 - ✅ Gap report (required, recommended, optional, info) with factual counts and suggested research
 
+- ✅ Guided learning flow (`test_guided_flow.py`, 9 tests). Verified live on a cuda-oxide topic with Groq + Exa:
+  - **start** builds a researched roadmap that is shown in chat;
+  - **next** delivers one structured lesson per phase, researching only uncovered concepts;
+  - after the last phase, **generate teaching pack** produces 5 PDFs in one job;
+  - phase progress bar and buttons in the UI;
+  - interactive jobs and LLM calls are prioritised over background graph building.
+
 ## Phase 6: Notes and assessments
 - ✅ Teacher and student notes from graph facts, evidence passages, coverage and conversation summaries; references only to real sources; versioned editing
 - ✅ Assessment configuration (types, counts, marks, sections, totals, difficulty and topic distributions, duration, custom instructions); inconsistent totals rejected before generation

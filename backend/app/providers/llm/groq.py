@@ -62,7 +62,7 @@ class GroqLLMProvider(LLMProvider):
                 f"within the {cap}-token per-request limit (LLM_TOKENS_PER_MINUTE={self.settings.llm_tokens_per_minute}"
                 f"). Raise LLM_TOKENS_PER_MINUTE if your Groq plan allows, or reduce the request size.",
                 retryable=False)
-        await self.bucket.acquire(prompt_tokens + max_out)
+        await self.bucket.acquire(prompt_tokens + max_out, low_priority=task in ("extract", "summarize"))
 
         kwargs: dict = {
             "model": model,

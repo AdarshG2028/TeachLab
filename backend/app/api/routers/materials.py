@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import ContainerDep, WorkspaceDep
@@ -128,6 +129,23 @@ async def regenerate_question(assessment_id: str, question_id: str, body: Regene
         return await enqueue(s, kind="regenerate_question", user_id=w.user_id, workspace_id=w.id,
                              payload={"question_id": question_id, "instructions": body.instructions},
                              max_attempts=2)
+
+
+class TeachingPackRequest(BaseModel):
+    teacher_name: str = Field(default="", max_length=120)
+    institution: str = Field(default="", max_length=200)
+    class_name: str = Field(default="", max_length=120)
+    assessment: dict | None = Field(default=None, description="Optional AssessmentConfig overrides")
+
+
+@router.post("/teaching-pack", response_model=JobOut, status_code=202)
+async def teaching_pack(body: TeachingPackRequest, w: WorkspaceDep, c: ContainerDep):
+    """One job: teacher notes, student notes, test paper, answer key and all PDFs."""
+    if body.assessment:
+        AssessmentConfig.model_validate({"title": "check", **body.assessment})  # fail fast on bad overrides
+    async with c.db.session() as s:
+        return await enqueue(s, kind="generate_pack", user_id=w.user_id, workspace_id=w.id,
+                             payload={"request": body.model_dump()}, max_attempts=2)
 
 
 # ---------------------------------------------------------------- exports / artifacts

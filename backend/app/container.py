@@ -148,6 +148,12 @@ class Container:
         return self._svc("research", lambda: ResearchAgent(self))
 
     @property
+    def tutor(self):
+        from app.services.tutor.guide import GuidedTutor
+
+        return self._svc("tutor", lambda: GuidedTutor(self))
+
+    @property
     def roadmap(self):
         from app.services.roadmap.service import RoadmapService
 

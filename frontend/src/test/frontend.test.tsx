@@ -69,3 +69,35 @@ describe("JobProgress", () => {
     vi.useRealTimers();
   });
 });
+
+describe("GuidedBar", () => {
+  const phase = (key: string, status: string) => ({ id: key, key, title: `Title ${key}`, description: "", objectives: [],
+    order_index: 0, included: true, teacher_edited: false, estimated_minutes: null, status, items: [] });
+  const roadmap = (statuses: string[]) => ({ id: "r", version: 1, organization: "prerequisite", summary: "", origin: "generated",
+    created_at: "", phases: statuses.map((s, i) => phase(`p${i + 1}`, s)) }) as never;
+
+  it("offers start when there is no roadmap", async () => {
+    const { GuidedBar } = await import("@/components/GuidedBar");
+    const onSend = vi.fn();
+    render(<GuidedBar roadmap={null} currentPhaseKey={null} busy={false} onSend={onSend} />);
+    fireEvent.click(screen.getByText(/Start: build my roadmap/));
+    expect(onSend).toHaveBeenCalledWith("start");
+  });
+
+  it("shows the current phase and sends next / pack commands", async () => {
+    const { GuidedBar } = await import("@/components/GuidedBar");
+    const onSend = vi.fn();
+    render(<GuidedBar roadmap={roadmap(["completed", "in_progress", "not_started"])} currentPhaseKey="p2" busy={false} onSend={onSend} />);
+    expect(screen.getByTestId("guided-bar")).toHaveTextContent("Phase 2 of 3: Title p2");
+    fireEvent.click(screen.getByText(/Next phase/));
+    fireEvent.click(screen.getByText(/Generate teaching pack/));
+    expect(onSend.mock.calls).toEqual([["next"], ["generate teaching pack"]]);
+  });
+
+  it("hides next when every phase is done", async () => {
+    const { GuidedBar } = await import("@/components/GuidedBar");
+    render(<GuidedBar roadmap={roadmap(["completed", "completed"])} currentPhaseKey="p2" busy={false} onSend={vi.fn()} />);
+    expect(screen.queryByText(/Next phase/)).toBeNull();
+    expect(screen.getByTestId("guided-bar")).toHaveTextContent("All 2 phases completed");
+  });
+});

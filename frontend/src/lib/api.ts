@@ -147,6 +147,7 @@ export const Api = {
     api<Question>(`${ws(id)}/assessments/${aid}/questions`, json(body)),
 
   exportPdf: (id: string, body: ExportRequest) => api<Job>(`${ws(id)}/exports`, json(body)),
+  teachingPack: (id: string, body: S["TeachingPackRequest"]) => api<Job>(`${ws(id)}/teaching-pack`, json(body)),
   artifacts: (id: string) => api<Artifact[]>(`${ws(id)}/artifacts`),
   downloadUrl: (id: string, artifactId: string) =>
     `${API_URL}${ws(id)}/artifacts/${artifactId}/download?user_id=${encodeURIComponent(getUserId())}`,

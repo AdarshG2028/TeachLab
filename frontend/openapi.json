@@ -2837,6 +2837,60 @@
         }
       }
     },
+    "/api/workspaces/{workspace_id}/teaching-pack": {
+      "post": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Teaching Pack",
+        "description": "One job: teacher notes, student notes, test paper, answer key and all PDFs.",
+        "operationId": "teaching_pack_api_workspaces__workspace_id__teaching_pack_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeachingPackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces/{workspace_id}/exports": {
       "post": {
         "tags": [
@@ -5656,6 +5710,43 @@
           "session_id"
         ],
         "title": "StartPhaseRequest"
+      },
+      "TeachingPackRequest": {
+        "properties": {
+          "teacher_name": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Teacher Name",
+            "default": ""
+          },
+          "institution": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Institution",
+            "default": ""
+          },
+          "class_name": {
+            "type": "string",
+            "maxLength": 120,
+            "title": "Class Name",
+            "default": ""
+          },
+          "assessment": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment",
+            "description": "Optional AssessmentConfig overrides"
+          }
+        },
+        "type": "object",
+        "title": "TeachingPackRequest"
       },
       "UrlIngestRequest": {
         "properties": {

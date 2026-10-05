@@ -127,6 +127,35 @@ Searches go through a per-workspace cache keyed on the normalized query. Sources
 * General knowledge must be labelled "General background (not from researched sources)".
 * Retrieved web content is wrapped in `<untrusted_*>` tags under an explicit policy, with the closing-tag escape neutralized. Model output is only ever parsed as schema-validated JSON and never executed.
 
+## Guided learning flow (`services/tutor/guide.py`)
+
+The default experience for a beginner (familiarity level 0), also available at other levels:
+
+1. **Roadmap first.** The first message (or **start**) triggers a quick, broad search: overview, key concepts,
+   prerequisites. A roadmap is planned straight from the retrieved passages, so it doesn't wait for graph
+   extraction, and it is shown in the chat. Graph extraction keeps running in the background.
+2. **One lesson per phase.** **next** completes the current phase and teaches the next one as a structured
+   lesson: objectives; one section per concept with an explanation, example and citations; common
+   misconceptions; and 2-3 check-your-understanding questions without answers.
+   - Research happens just in time. A concept counts as covered only if a retrieved passage both scores
+     above the threshold *and* mentions most of the concept's key terms. Embedding scores alone are not
+     discriminative: unrelated chunks of the same domain score 0.6-0.7.
+   - Only uncovered concepts trigger focused searches.
+   - Moving on marks the phase completed, but never marks concepts as mastered.
+3. **Teaching pack.** After the last phase, or whenever asked (**generate teaching pack**,
+   `POST /teaching-pack`), one `generate_pack` job produces teacher notes, student notes, a strict-coverage
+   test, the answer key and all PDFs. If the test cannot be built, the notes PDFs are still delivered,
+   with a warning.
+
+The commands **start**, **next** and **generate teaching pack** are recognised deterministically, so they
+cost no planner LLM call. Anything else goes through the normal research/answer pipeline.
+
+**Fairness under free-tier limits.**
+- Interactive jobs (chat turns, lessons) are claimed before background jobs (`graph_extract`, rebuilds),
+  and one worker slot is kept free for them.
+- Background LLM calls (extraction, summaries) leave about 35% of the per-minute token budget untouched, so
+  lessons are not starved by graph building.
+
 ## Roadmap, coverage, gaps
 
 * **Roadmap.** A roadmap is a versioned view of the graph, not the graph itself. The LLM picks an organization (prerequisite, chronological, thematic, causal or mixed) from the graph outline and its key relations. Concept items are linked to graph entity IDs.

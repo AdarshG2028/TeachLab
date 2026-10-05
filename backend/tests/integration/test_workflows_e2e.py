@@ -53,6 +53,8 @@ async def test_level0_beginner_tutorial_flow(client, worker, fake_llm):
     # research via chat: the agent decides external research is needed (nothing known yet)
     msg = await chat(client, worker, wid, sid, "Please research qubits and the Bloch sphere for me")
     assert msg["meta"]["research"]["performed"] and msg["meta"]["research"]["new_sources"] == 2
+    # beginner without a roadmap: the roadmap comes first, then the answer to the question
+    assert msg["meta"]["guided"]["kickoff"] and "Your learning roadmap" in msg["content"]
     assert msg["citations"] and all(c["source_id"] and c["chunk_id"] for c in msg["citations"])
     await run_jobs(worker)  # follow-up graph extraction job
     assert (await client.get(f"/api/workspaces/{wid}/graph/stats")).json()["entities"] >= 5
@@ -60,7 +62,7 @@ async def test_level0_beginner_tutorial_flow(client, worker, fake_llm):
     # roadmap derived from the graph
     rm_job = await job(client, worker, await client.post(f"/api/workspaces/{wid}/roadmap/generate", json={}))
     rm = (await client.get(f"/api/workspaces/{wid}/roadmap")).json()
-    assert rm["version"] == rm_job["result"]["version"] == 1 and len(rm["phases"]) >= 2
+    assert rm["version"] == rm_job["result"]["version"] == 2 and len(rm["phases"]) >= 2  # v1 came from kickoff
     assert all(item["coverage"]["planned"] for p in rm["phases"] for item in p["items"])
 
     # start phase 1 (tutorial), ask a follow-up, then explicitly complete it and move on

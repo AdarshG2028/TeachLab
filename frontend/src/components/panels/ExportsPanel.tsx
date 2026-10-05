@@ -51,6 +51,13 @@ export function ExportsPanel({ workspaceId }: { workspaceId: string }) {
               }}>{k.label}</button>
           ))}
         </div>
+        <button className="btn" disabled={!!jobId} onClick={async () => {
+          setError(null);
+          try {
+            setJobId((await Api.teachingPack(workspaceId, { teacher_name: meta.teacher_name,
+              institution: meta.institution, class_name: meta.class_name })).id);
+          } catch (e) { setError(e); }
+        }}>Generate full teaching pack (notes + test + answer key)</button>
         <JobProgress jobId={jobId} label="PDF" onDone={(j) => { setJobId(null); load(); if (j.status === "failed") setError(new Error(String((j.error as { message?: string }).message))); }} />
         <ErrorText error={error} />
       </div>

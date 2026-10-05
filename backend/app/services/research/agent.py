@@ -119,6 +119,27 @@ class ResearchOutcome:
     failures: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _Turn:
+    """Mutable state accumulated while handling one chat turn."""
+
+    message_id: str
+    outcome: ResearchOutcome = field(default_factory=ResearchOutcome)
+    graph_job: str | None = None
+    preface: str = ""
+    plan: TurnPlan | None = None
+    nav: dict[str, Any] | None = None
+    guided: dict[str, Any] = field(default_factory=dict)
+    sufficient: bool = False
+    research_performed: bool = False
+    lesson_queries: list[str] = field(default_factory=list)
+    extra_meta: dict[str, Any] = field(default_factory=dict)
+
+    def merge_outcome(self, other: ResearchOutcome) -> None:
+        for name in ("queries", "cached_queries", "new_source_ids", "reused_source_ids", "failures"):
+            getattr(self.outcome, name).extend(getattr(other, name))
+
+
 class ResearchAgent:
     def __init__(self, c: Container) -> None:
         self.c = c
@@ -192,6 +213,8 @@ class ResearchAgent:
 
     async def handle_turn(self, *, user_id: str, workspace: Workspace, session_id: str, message_id: str,
                           progress=None) -> dict[str, Any]:
+        from app.services.tutor.guide import quick_intent
+
         ws_id = workspace.id
         async with self.c.db.session() as s:
             sess = await s.get(ResearchSession, session_id)
@@ -210,67 +233,106 @@ class ResearchAgent:
             summary = sess.rolling_summary
 
         question = msg.content
+        tutor = self.c.tutor
+        quick = quick_intent(question)
+        turn = _Turn(message_id=message_id)
         if progress:
             await progress("planning", 5)
-        local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
-        strong = [p for p in local if p.score >= self.settings.retrieval_min_score]
-        roadmap_ctx = await self.c.roadmap.phase_context(ws_id, state)
-        known = (await self.c.graph.concept_outline(ws_id, limit=40))["nodes"]
+        rm = await self.c.roadmap.current(ws_id)
 
-        plan = await generate_structured(
-            self.c.llm, task="plan_turn", system=PLAN_SYSTEM, tier="fast", schema=TurnPlan, max_tokens=800,
-            user=(f"Topic: {workspace.topic}\nFamiliarity: {FAMILIARITY[workspace.familiarity_level][0]}\n"
-                  f"Known concepts: {', '.join(k['name'] for k in known) or '(none yet)'}\n"
-                  f"Current phase: {roadmap_ctx.get('current_phase_title') or '(none)'}\n"
-                  f"local_retrieval: {len(strong)} strong hits (best score "
-                  f"{max((p.score for p in local), default=0):.2f})\n"
-                  f"Recent conversation summary: {summary[:1500] or '(none)'}\n\n"
-                  f"Teacher message:\n{question}"))
+        # 1) Guided kickoff: a beginner (or anyone saying start/next) without a roadmap gets the roadmap first.
+        if rm is None and (workspace.familiarity_level == 0 or quick in ("start", "next")):
+            rm, turn.outcome, turn.graph_job = await tutor.kickoff(workspace, user_id, session_id, progress)
+            turn.preface = tutor.roadmap_markdown(workspace, rm)
+            turn.guided = {"kickoff": True, "phase_count": len([p for p in rm.phases if p.included]),
+                           "roadmap_version": rm.version}
+            if quick in ("start", "next") or not question.strip():
+                return await self._finish(turn, user_id, ws_id, session_id, turn.preface, progress=progress)
 
-        # sufficiency decision: the model suggests, deterministic rules decide. Existing knowledge counts as
-        # sufficient when enough strong passages match, or when the focus concepts are already in the graph
-        # with supporting claims and at least one relevant passage exists.
-        explicit = plan.intent == "research_request"
-        focus_entities: list[dict] = []
-        for name in plan.focus_concepts[:5]:
-            focus_entities.extend(await self.c.graph.search_entities(ws_id, name, limit=2))
-        focus_facts = await self.c.graph.facts_for_entities(ws_id, [e["id"] for e in focus_entities], limit=10)
-        graph_supported = bool(plan.focus_concepts) and len(focus_facts) >= 2 and any(
-            p.score >= self.settings.retrieval_min_score * 0.8 for p in local)
-        sufficient = len(strong) >= self.settings.sufficiency_min_hits or graph_supported
-        do_research = bool(plan.search_queries) and (explicit or (plan.needs_external_research and not sufficient)
-                                                     or (not local and plan.intent in ("question", "explain")))
-        if do_research and not plan.search_queries:
-            plan.search_queries = [f"{workspace.topic}: {question[:150]}"]
-        outcome = ResearchOutcome()
-        graph_job = None
-        if do_research:
-            outcome = await self.research(ws_id, plan.search_queries, progress)
-            graph_job = await self.enqueue_graph_build(user_id, ws_id, outcome.new_source_ids, session_id)
-            if outcome.new_source_ids:
-                local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
+        # 2) Teaching pack on request.
+        if quick == "pack":
+            return await self._pack_reply(turn, workspace, user_id, session_id, progress)
 
-        nav_result = None
+        # 3) Plan: quick commands are understood deterministically; everything else goes to the planner.
+        if quick in ("next", "start") and rm is not None:
+            action = "next_phase" if quick == "next" or not state.get("current_phase_id") else "revisit_phase"
+            plan = TurnPlan(intent="navigation", navigation=NavigationAction(action=action))
+        else:
+            plan = await self._plan(workspace, question, state, summary, ws_id)
+            if plan.intent == "generate_request":
+                return await self._pack_reply(turn, workspace, user_id, session_id, progress, plan=plan)
+        turn.plan = plan
+
+        # 4) Navigation (phase progression) and lesson mode.
+        lesson = None
         if plan.navigation.action != "none":
-            nav_result = await self.c.roadmap.navigate(ws_id, session_id, plan.navigation.action,
-                                                       plan.navigation.phase_ref)
+            turn.nav = await self.c.roadmap.navigate(ws_id, session_id, plan.navigation.action,
+                                                     plan.navigation.phase_ref)
+            if turn.nav.get("ok"):
+                turn.guided.update({k: turn.nav.get(k) for k in ("phase_index", "phase_count", "finished")})
+                turn.guided["phase_title"] = turn.nav.get("current_phase")
+                turn.guided["phase_key"] = turn.nav.get("current_phase_key")
+                if turn.nav.get("finished"):
+                    return await self._finish(turn, user_id, ws_id, session_id,
+                                              tutor.finished_markdown(workspace, turn.nav["phase_count"]),
+                                              progress=progress)
+                if plan.navigation.action in ("start_phase", "next_phase", "goto_phase", "revisit_phase",
+                                              "previous_phase", "skip_phase"):
+                    rm = await self.c.roadmap.current(ws_id)
+                    phase = next(p for p in rm.phases if p.key == turn.nav["current_phase_key"])
+                    lesson = await tutor.prepare_lesson(workspace, user_id, session_id, phase,
+                                                        turn.nav["phase_index"], turn.nav["phase_count"], progress)
+                    turn.guided["lesson"] = {"weak_concepts": lesson.weak_concepts,
+                                             "research_queries": lesson.research_queries,
+                                             "new_sources": len(lesson.new_source_ids)}
             async with self.c.db.session() as s:
                 state = session_state(await s.get(ResearchSession, session_id))
-            roadmap_ctx = await self.c.roadmap.phase_context(ws_id, state)
 
+        # 5) Research decision for ordinary questions (lessons research per phase in prepare_lesson).
+        local: list[RetrievedPassage] = []
+        focus_entities: list[dict] = []
+        if lesson is None:
+            local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
+            strong = [p for p in local if p.score >= self.settings.retrieval_min_score]
+            for name in plan.focus_concepts[:5]:
+                focus_entities.extend(await self.c.graph.search_entities(ws_id, name, limit=2))
+            focus_facts = await self.c.graph.facts_for_entities(ws_id, [e["id"] for e in focus_entities], limit=10)
+            graph_supported = bool(plan.focus_concepts) and len(focus_facts) >= 2 and any(
+                p.score >= self.settings.retrieval_min_score * 0.8 for p in local)
+            turn.sufficient = len(strong) >= self.settings.sufficiency_min_hits or graph_supported
+            explicit = plan.intent == "research_request"
+            do_research = bool(plan.search_queries) and (
+                explicit or (plan.needs_external_research and not turn.sufficient)
+                or (not local and plan.intent in ("question", "explain")))
+            if do_research:
+                extra = await self.research(ws_id, plan.search_queries, progress)
+                turn.merge_outcome(extra)
+                turn.graph_job = await self.enqueue_graph_build(user_id, ws_id, extra.new_source_ids,
+                                                                session_id) or turn.graph_job
+                if extra.new_source_ids:
+                    local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
+        else:
+            turn.research_performed = bool(lesson.research_queries)
+            turn.lesson_queries = lesson.research_queries
+
+        # 6) Grounded answer (lesson or question).
         if progress:
             await progress("retrieving knowledge", 60)
-        passages = [p for p in local if p.score >= self.settings.retrieval_min_score * 0.8] or local[:3]
-        entity_rows = focus_entities
+        roadmap_ctx = await self.c.roadmap.phase_context(ws_id, state)
+        if lesson is not None:
+            passages = lesson.passages
+        else:
+            passages = [p for p in local if p.score >= self.settings.retrieval_min_score * 0.8] or local[:3]
         chunk_entities = await self.c.graph.entities_for_chunks(ws_id, [p.chunk_id for p in passages])
-        entity_ids = list(dict.fromkeys([e["id"] for e in entity_rows] + [e["id"] for e in chunk_entities]))[:12]
+        entity_ids = list(dict.fromkeys([e["id"] for e in focus_entities] + [e["id"] for e in chunk_entities]))[:12]
         facts = await self.c.graph.facts_for_entities(ws_id, entity_ids, limit=30)
-
         markers = {f"S{i}": p for i, p in enumerate(passages, start=1)}
         mode_name, mode_text = FAMILIARITY[workspace.familiarity_level]
         system = self._answer_system(workspace, mode_text, roadmap_ctx)
+        user_text = question if lesson is None else (
+            f"{tutor.lesson_instructions(lesson)}\n\nTeacher's message: {question}")
         inputs = ContextInputs(
-            system=system, user_message=question, summary=summary,
+            system=system, user_message=user_text, summary=summary,
             session_state={k: v for k, v in {**state, "mode": mode_name,
                                              "current_phase": roadmap_ctx.get("current_phase_title"),
                                              "current_phase_objectives": roadmap_ctx.get("objectives"),
@@ -282,38 +344,80 @@ class ResearchAgent:
                                                                                                     "assistant")],
         )
         tier = "smart"
-        answer_tokens = output_budget(self.c.llm, tier, 2500)
+        answer_tokens = output_budget(self.c.llm, tier, 3500 if lesson is not None else 2500)
         built = build_context(inputs, make_budget(self.c.llm.context_tokens(tier), answer_tokens + 400,
                                                   self.settings.context_budget_ratio))
         if progress:
-            await progress("writing answer", 75)
+            await progress("writing lesson" if lesson is not None else "writing answer", 75)
         answer = await generate_structured(
             self.c.llm, task="answer", system=built.messages[0]["content"],
             user=self._flatten_history(built.messages[1:]), schema=AnswerOutput, tier=tier, max_tokens=answer_tokens)
-
         text, citations = self._ground(answer, {m: markers[m] for m in built.included_passages})
-        meta = {
-            "reply_to": message_id, "intent": plan.intent, "research": {
-                "performed": do_research, "sufficient_locally": sufficient, "queries": outcome.queries, "cached_queries": outcome.cached_queries,
-                "new_sources": len(outcome.new_source_ids), "reused_sources": len(outcome.reused_source_ids),
-                "failures": outcome.failures[:5], "graph_job_id": graph_job},
-            "concepts_explained": answer.concepts_explained, "suggested_next": answer.suggested_next,
-            "evidence_limitations": answer.evidence_limitations, "navigation": nav_result,
+        if turn.preface:
+            text = f"{turn.preface}\n\n---\n\n{text}"
+        explained = answer.concepts_explained
+        if lesson is not None:  # a delivered lesson explains the phase's concepts
+            explained = list(dict.fromkeys([it.title for it in lesson.phase.items if it.included] + explained))
+        turn.extra_meta = {
+            "concepts_explained": explained, "suggested_next": answer.suggested_next,
+            "evidence_limitations": answer.evidence_limitations,
             "context": {"tokens": built.used_tokens, "passages": len(built.included_passages),
-                        "history_messages": built.included_history, "graph_facts": len(facts)},
+                        "history_messages": built.included_history, "graph_facts": len(facts)}}
+        return await self._finish(turn, user_id, ws_id, session_id, text, citations=citations,
+                                  open_questions=answer.open_questions, explained=explained, progress=progress)
+
+    async def _plan(self, workspace: Workspace, question: str, state: dict, summary: str, ws_id: str) -> TurnPlan:
+        local = await self.c.retrieval.search(ws_id, question, top_k=self.settings.retrieval_top_k)
+        strong = [p for p in local if p.score >= self.settings.retrieval_min_score]
+        roadmap_ctx = await self.c.roadmap.phase_context(ws_id, state)
+        known = (await self.c.graph.concept_outline(ws_id, limit=40))["nodes"]
+        return await generate_structured(
+            self.c.llm, task="plan_turn", system=PLAN_SYSTEM, tier="fast", schema=TurnPlan, max_tokens=800,
+            user=(f"Topic: {workspace.topic}\nFamiliarity: {FAMILIARITY[workspace.familiarity_level][0]}\n"
+                  f"Known concepts: {', '.join(k['name'] for k in known) or '(none yet)'}\n"
+                  f"Current phase: {roadmap_ctx.get('current_phase_title') or '(none)'}\n"
+                  f"local_retrieval: {len(strong)} strong hits (best score "
+                  f"{max((p.score for p in local), default=0):.2f})\n"
+                  f"Recent conversation summary: {summary[:1500] or '(none)'}\n\n"
+                  f"Teacher message:\n{question}"))
+
+    async def _pack_reply(self, turn: _Turn, workspace: Workspace, user_id: str, session_id: str, progress,
+                          plan: TurnPlan | None = None) -> dict[str, Any]:
+        turn.plan = plan or TurnPlan(intent="generate_request")
+        pack_job = await self.c.tutor.enqueue_pack(workspace, user_id)
+        turn.guided["pack_job_id"] = pack_job
+        text = ((turn.preface + "\n\n---\n\n") if turn.preface else "") + (
+            "Generating your **teaching pack**: teacher notes, student notes, a question paper and a separate "
+            "answer key, all as PDFs, built from what you researched and covered. Progress is shown below; "
+            "the downloads appear here and in *PDF exports* when it finishes.")
+        return await self._finish(turn, user_id, workspace.id, session_id, text, progress=progress)
+
+    async def _finish(self, turn: _Turn, user_id: str, ws_id: str, session_id: str, text: str, *,
+                      citations: list[dict] | None = None, open_questions: list[str] | None = None,
+                      explained: list[str] | None = None, progress=None) -> dict[str, Any]:
+        plan = turn.plan or TurnPlan(intent="navigation")
+        meta = {
+            "reply_to": turn.message_id, "intent": plan.intent,
+            "research": {
+                "performed": turn.research_performed or bool(turn.outcome.queries),
+                "sufficient_locally": turn.sufficient,
+                "queries": turn.outcome.queries or turn.lesson_queries,
+                "cached_queries": turn.outcome.cached_queries, "new_sources": len(turn.outcome.new_source_ids),
+                "reused_sources": len(turn.outcome.reused_source_ids), "failures": turn.outcome.failures[:5],
+                "graph_job_id": turn.graph_job},
+            "navigation": turn.nav, "guided": turn.guided or None, **turn.extra_meta,
         }
         async with self.c.db.session() as s:
             sess = (await s.execute(select(ResearchSession).where(ResearchSession.id == session_id))).scalar_one()
-            reply = await append_message(s, sess, "assistant", text, citations=citations, meta=meta)
+            reply = await append_message(s, sess, "assistant", text, citations=citations or [], meta=meta)
             reply_id = reply.id
             new_state = session_state(sess)
             if plan.focus_concepts:
                 new_state["current_concept"] = plan.focus_concepts[0]
                 new_state["recent_concepts"] = list(dict.fromkeys(
                     plan.focus_concepts + new_state.get("recent_concepts", [])))[:15]
-            unresolved = [q for q in new_state.get("unresolved_questions", [])
-                          if q not in plan.resolved_questions]
-            new_state["unresolved_questions"] = list(dict.fromkeys(unresolved + answer.open_questions))[-20:]
+            unresolved = [q for q in new_state.get("unresolved_questions", []) if q not in plan.resolved_questions]
+            new_state["unresolved_questions"] = list(dict.fromkeys(unresolved + (open_questions or [])))[-20:]
             sess.state = new_state
             for p in plan.preferences:
                 stmt = pg_insert(Preference).values(user_id=user_id, scope=ws_id, key=p.key,
@@ -321,17 +425,18 @@ class ResearchAgent:
                 await s.execute(stmt.on_conflict_do_update(index_elements=["user_id", "scope", "key", "origin"],
                                                            set_={"value": stmt.excluded.value}))
         await self.c.coverage.record_turn(
-            ws_id, discussed=plan.focus_concepts, explained=answer.concepts_explained,
-            completed=plan.mark_completed_concepts,
-            feedback=[f.model_dump() for f in plan.feedback], message_id=reply_id)
+            ws_id, discussed=plan.focus_concepts, explained=explained or [],
+            completed=plan.mark_completed_concepts, feedback=[f.model_dump() for f in plan.feedback],
+            message_id=reply_id)
         if progress:
             await progress("updating memory", 92)
         async with self.c.db.session() as s:
             sess = (await s.execute(select(ResearchSession).where(ResearchSession.id == session_id))).scalar_one()
             await maybe_summarize(s, self.c.llm, sess, keep_recent=self.settings.context_recent_messages,
                                   trigger_tokens=self.settings.summary_trigger_tokens)
-        return {"assistant_message_id": reply_id, "research_performed": do_research,
-                "new_sources": outcome.new_source_ids, "graph_job_id": graph_job}
+        return {"assistant_message_id": reply_id, "research_performed": meta["research"]["performed"],
+                "new_sources": turn.outcome.new_source_ids, "graph_job_id": turn.graph_job,
+                "guided": turn.guided or None}
 
     @staticmethod
     def _flatten_history(messages: list[dict]) -> str:

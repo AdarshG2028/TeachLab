@@ -118,9 +118,58 @@ async def reindex_vectors(ctx: JobContext, p: dict[str, Any]) -> dict[str, Any]:
     return {"points": await ctx.container.ingestion.reindex_workspace(ws.id)}
 
 
+DEFAULT_PACK_TEST = {
+    "difficulty": "mixed", "coverage_mode": "strict", "duration_minutes": 40,
+    "sections": [{"question_type": "mcq", "count": 5, "marks_each": 1},
+                 {"question_type": "true_false", "count": 3, "marks_each": 1},
+                 {"question_type": "short_answer", "count": 3, "marks_each": 3},
+                 {"question_type": "long_answer", "count": 1, "marks_each": 5}],
+}
+
+
+async def generate_pack(ctx: JobContext, p: dict[str, Any]) -> dict[str, Any]:
+    """Teaching pack: teacher + student notes, a test paper, the answer key and all PDFs, in one job."""
+    from app.core.errors import AppError
+    from app.services.assessment.schemas import AssessmentConfig
+
+    ws = await ctx.workspace()
+    c = ctx.container
+    req = p.get("request") or {}
+    meta = {k: req.get(k, "") for k in ("teacher_name", "institution", "class_name")}
+    result: dict[str, Any] = {"artifacts": [], "warnings": []}
+
+    for i, kind in enumerate(("teacher", "student")):
+        await ctx.progress(f"writing {kind} notes", 5 + i * 25)
+        doc = await c.notes.generate(ws.id, NotesConfig(kind=kind), progress=None)
+        result[f"{kind}_notes_id"] = doc.id
+
+    await ctx.progress("generating the test paper", 55)
+    test_cfg = {**DEFAULT_PACK_TEST, **(req.get("assessment") or {}),
+                "title": (req.get("assessment") or {}).get("title") or f"{ws.topic}: Unit Test",
+                "student_level": ws.academic_level or ws.audience}
+    assessment_id = None
+    try:
+        cfg = AssessmentConfig.model_validate(test_cfg)
+        a = await c.assessment.create(ws.id, cfg)
+        await c.assessment.generate(ws.id, a.id, progress=None)
+        assessment_id = a.id
+        result["assessment_id"] = a.id
+    except AppError as exc:  # e.g. nothing covered yet: still deliver the notes
+        result["warnings"].append(f"Test paper not generated: {exc.message}")
+
+    exports = ["teacher_notes", "student_notes"]
+    if assessment_id:
+        exports += ["question_paper", "answer_key", "student_pack"]
+    for i, kind in enumerate(exports):
+        await ctx.progress(f"rendering {kind.replace('_', ' ')} PDF", 80 + i * 4)
+        art = await c.exports.export(ws.id, ExportRequest(kind=kind, assessment_id=assessment_id, **meta))
+        result["artifacts"].append({"kind": kind, "artifact_id": art.id, "title": art.title})
+    return result
+
+
 HANDLERS: dict[str, Handler] = {
     "chat_turn": chat_turn, "research": research, "graph_extract": graph_extract, "ingest_url": ingest_url,
     "ingest_upload": ingest_upload, "generate_roadmap": generate_roadmap, "generate_notes": generate_notes,
     "generate_assessment": generate_assessment, "regenerate_question": regenerate_question,
-    "export_pdf": export_pdf, "rebuild_graph": rebuild_graph, "reindex_vectors": reindex_vectors,
+    "export_pdf": export_pdf, "generate_pack": generate_pack, "rebuild_graph": rebuild_graph, "reindex_vectors": reindex_vectors,
 }
