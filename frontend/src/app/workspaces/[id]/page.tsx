@@ -43,28 +43,38 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
     ["Tests", ov.stats.assessments as number], ["Roadmap", ov.roadmap_version ? `v${ov.roadmap_version}` : "–"]];
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* slim header: one row */}
-      <header className="card-dark fade-in !rounded-2xl !px-4 !py-3">
-        <div className="relative z-10 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <a href="/" className="muted text-sm hover:text-white" title="All workspaces">←</a>
-          <div className="min-w-0 flex-1">
-            <h1 className="gradient-text truncate text-xl font-bold leading-tight">{w.title}</h1>
-            <p className="muted truncate text-xs">
-              <span className="dot mr-1" />{level} · {w.audience || "audience n/a"} · {w.academic_level || "level n/a"}
-            </p>
+    <div className="flex flex-col gap-2">
+      {/* one compact row: brand/back, title, tabs, stats, workflow, mode */}
+      <header className="card-dark fade-in !rounded-2xl !px-3 !py-2">
+        <div className="relative z-10 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <a href="/" className="tile h-8 w-8 shrink-0 text-xs" title="All workspaces">TL</a>
+          <div className="min-w-0 max-w-[16rem] shrink">
+            <h1 className="gradient-text truncate text-base font-bold leading-tight">{w.title}</h1>
+            <p className="muted truncate text-[11px]"><span className="dot mr-1" />{level} · {w.academic_level || w.audience || ""}</p>
           </div>
-          <div className="hidden items-center gap-1.5 md:flex">
+          <nav className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto rounded-full bg-white/5 p-0.5 ring-1 ring-white/10">
+            {TABS.map(([key, label]) => (
+              <button key={key} onClick={() => setTab(key)}
+                className={`whitespace-nowrap rounded-full px-3 py-1 text-[13px] font-medium transition ${
+                  tab === key ? "bg-aqua text-[#06323a]" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div className="hidden items-center gap-1 2xl:flex">
             {stats.map(([k, v]) => (
-              <span key={k} className="rounded-full bg-white/5 px-3 py-1 text-xs ring-1 ring-white/10">
+              <span key={k} className="rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] ring-1 ring-white/10">
                 <b className="text-white">{v}</b> <span className="muted">{k}</span>
               </span>
             ))}
           </div>
           <details className="relative">
-            <summary className="btn-secondary cursor-pointer list-none">Workflow ▾</summary>
+            <summary className="btn-secondary cursor-pointer list-none !px-3 !py-1 !text-xs">Workflow ▾</summary>
             <ol className="absolute right-0 z-30 mt-2 w-72 space-y-1 rounded-2xl bg-charcoal-2 p-3 text-xs shadow-2xl ring-1 ring-white/10"
               aria-label="suggested workflow">
+              <li className="muted mb-1">
+                {stats.map(([k, v]) => `${v} ${k.toLowerCase()}`).join(" · ")}
+              </li>
               {ov.workflow.map((s, i) => (
                 <li key={s.key} className={s.status === "done" ? "text-aqua" : s.status === "recommended" ? "text-white" : "text-white/50"}>
                   {s.status === "done" ? "✓" : `${i + 1}.`} {s.label}
@@ -72,7 +82,7 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
               ))}
             </ol>
           </details>
-          <select className="input !w-auto !py-1.5" aria-label="Mode" title="Mode (changeable, research is kept)"
+          <select className="input !w-auto !py-1 !text-xs" aria-label="Mode" title="Mode (changeable, research is kept)"
             value={w.familiarity_level} onChange={async (e) => {
               await Api.updateWorkspace(id, { familiarity_level: Number(e.target.value) as 0 | 1 | 2 });
               refresh();
@@ -81,14 +91,6 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
           </select>
         </div>
       </header>
-
-      <nav className="flex flex-wrap gap-1 self-start rounded-full bg-white/40 p-1 ring-1 ring-white/60 backdrop-blur">
-        {TABS.map(([key, label]) => (
-          <button key={key} onClick={() => setTab(key)} className={`tab ${tab === key ? "tab-active" : ""}`}>
-            {label}
-          </button>
-        ))}
-      </nav>
 
       <div>
         {tab === "chat" && <ChatPanel workspaceId={id} sessionId={sessionId} onActivity={refresh} />}

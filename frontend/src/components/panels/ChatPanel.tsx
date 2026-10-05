@@ -61,26 +61,23 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
   const [details, setDetails] = useState(false);
 
   return (
-    <div className="card relative flex h-[calc(100dvh-13rem)] min-h-[420px] flex-col !p-0">
-      {/* toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-black/5 px-4 py-2 text-sm">
-        <select className="input !w-auto !py-1" value={sessionId} onChange={(e) => setSessionId(e.target.value)}
+    <div className="card relative flex h-[calc(100dvh-5.25rem)] min-h-[360px] flex-col !p-0">
+      {/* single toolbar row: session, phase progress + actions, details */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-black/5 px-3 py-1.5 text-sm">
+        <select className="input !w-auto !py-0.5 !text-xs" value={sessionId} onChange={(e) => setSessionId(e.target.value)}
           aria-label="Session">
           {sessions.map((s) => <option key={s.id} value={s.id}>{s.title} ({s.message_count})</option>)}
         </select>
-        <button className="btn-secondary !py-1" onClick={async () => {
+        <button className="btn-secondary !px-2.5 !py-0.5 !text-xs" onClick={async () => {
           const s = await Api.createSession(workspaceId, `Session ${sessions.length + 1}`);
           setSessions((x) => [s, ...x]);
           setSessionId(s.id);
         }}>+ New</button>
-        {messages.length >= 50 && <button className="btn-secondary !py-1" onClick={loadOlder}>Load older</button>}
-        <button className="btn-secondary ml-auto !py-1" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
-          Session details
-        </button>
-      </div>
-
-      <div className="px-4 pt-2">
         <GuidedBar roadmap={roadmap} currentPhaseKey={state.current_phase_id ?? null} busy={!!jobId} onSend={sendText} />
+        {messages.length >= 50 && <button className="btn-secondary !px-2.5 !py-0.5 !text-xs" onClick={loadOlder}>Older</button>}
+        <button className="btn-secondary !px-2.5 !py-0.5 !text-xs" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
+          Details
+        </button>
       </div>
 
       {/* conversation: centered reading column */}
@@ -146,7 +143,7 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
 
       {/* session details slide-over (hidden by default) */}
       {details && (
-        <aside className="absolute right-3 top-14 z-20 w-80 max-w-[90%] space-y-2 rounded-2xl bg-white p-4 text-sm shadow-2xl ring-1 ring-black/10">
+        <aside className="absolute right-3 top-12 z-20 w-80 max-w-[90%] space-y-2 rounded-2xl bg-white p-4 text-sm shadow-2xl ring-1 ring-black/10">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Session details</h3>
             <button className="muted" onClick={() => setDetails(false)} aria-label="Close">✕</button>

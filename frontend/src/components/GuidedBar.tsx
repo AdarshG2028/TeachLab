@@ -12,10 +12,10 @@ export function GuidedBar({ roadmap, currentPhaseKey, busy, onSend }: {
   const current = idx >= 0 ? phases[idx] : null;
 
   return (
-    <div className="card-dark !rounded-2xl !px-4 !py-2.5 text-sm" data-testid="guided-bar">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          {!roadmap && <span>No roadmap yet. Start to research the topic and plan your phases.</span>}
+    <div className="min-w-[280px] flex-1" data-testid="guided-bar">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <div className="min-w-0 truncate">
+          {!roadmap && <span className="text-muted">No roadmap yet.</span>}
           {roadmap && !current && !finished && <span>Roadmap ready: {phases.length} phases.</span>}
           {current && !finished && (
             <span><b>Phase {idx + 1} of {phases.length}:</b> {current.title}</span>
@@ -23,24 +23,24 @@ export function GuidedBar({ roadmap, currentPhaseKey, busy, onSend }: {
           {finished && <span><b>All {phases.length} phases completed.</b></span>}
         </div>
         <div className="flex gap-1.5">
-          {!roadmap && <button className="btn-accent" disabled={busy} onClick={() => onSend("start")}>Start: build my roadmap</button>}
+          {!roadmap && <button className="btn-accent !px-3 !py-1 !text-xs" disabled={busy} onClick={() => onSend("start")}>Start: build my roadmap</button>}
           {roadmap && !finished && (
-            <button className="btn-accent" disabled={busy} onClick={() => onSend("next")}>
+            <button className="btn-accent !px-3 !py-1 !text-xs" disabled={busy} onClick={() => onSend("next")}>
               {current ? "Next phase →" : "Start phase 1 →"}
             </button>
           )}
           {roadmap && (
-            <button className={finished ? "btn-accent" : "btn-secondary"} disabled={busy}
+            <button className={`${finished ? "btn-accent" : "btn-secondary"} !px-3 !py-1 !text-xs`} disabled={busy}
               onClick={() => onSend("generate teaching pack")}>Generate teaching pack</button>
           )}
         </div>
       </div>
       {phases.length > 0 && (
-        <ol className="mt-1.5 flex gap-1" aria-label="phase progress">
+        <ol className="mt-1 flex gap-1" aria-label="phase progress">
           {phases.map((p, i) => (
             <li key={p.key} title={`Phase ${i + 1}: ${p.title} (${p.status.replace("_", " ")})`}
-              className={`h-1.5 flex-1 rounded-full ${p.status === "completed" ? "bg-aqua shadow-[0_0_10px_var(--color-aqua)]"
-                : p.key === currentPhaseKey ? "bg-white" : p.status === "skipped" ? "bg-white/20" : "bg-white/10"}`} />
+              className={`h-1 flex-1 rounded-full ${p.status === "completed" ? "bg-aqua shadow-[0_0_8px_var(--color-aqua)]"
+                : p.key === currentPhaseKey ? "bg-ink/60" : p.status === "skipped" ? "bg-black/10" : "bg-black/10"}`} />
           ))}
         </ol>
       )}

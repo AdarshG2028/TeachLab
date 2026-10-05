@@ -20,7 +20,7 @@ export default function Home() {
   return (
     <div className="space-y-5">
       <section className="card-dark fade-in">
-        <p className="label">● Teaching research workspace</p>
+        <p className="label flex items-center gap-2"><span className="tile h-7 w-7 text-xs">TL</span> TeachLab · Teaching research workspace</p>
         <h1 className="gradient-text max-w-2xl text-4xl font-bold leading-tight">
           Research it once. Teach it with confidence.
         </h1>
