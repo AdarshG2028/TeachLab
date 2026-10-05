@@ -94,7 +94,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
 }
 .bubble-assistant {
-  @apply mr-auto max-w-[95%] rounded-3xl rounded-bl-lg border border-white/70 px-4 py-3;
+  @apply mr-auto w-full rounded-3xl rounded-bl-lg border border-white/70 px-4 py-3;
   background: linear-gradient(170deg, rgba(255, 255, 255, 0.85), rgba(201, 251, 251, 0.45));
   box-shadow: 0 10px 26px -16px rgba(15, 118, 110, 0.5);
 }
