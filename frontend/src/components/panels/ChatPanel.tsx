@@ -106,7 +106,7 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
                     {research.reused_sources} reused sources</p>
                 )}
                 {guided?.pack_job_id && <PackStatus workspaceId={workspaceId} jobId={guided.pack_job_id} />}
-                {limitations && <p className="mt-1 text-xs text-amber-700">Evidence note: {limitations}</p>}
+                {limitations && <p className="mt-1 text-xs text-muted">Evidence note: {limitations}</p>}
                 {citations.length > 0 && (
                   <details className="mt-2 border-t border-black/5 pt-2 text-xs">
                     <summary className="cursor-pointer text-muted">Sources ({citations.length})</summary>
@@ -114,7 +114,7 @@ export function ChatPanel({ workspaceId, sessionId: initial, onActivity }: {
                       {citations.map((c) => (
                         <li key={c.marker} title={c.snippet}>
                           <b className="tile !h-5 !w-auto !rounded-md px-1.5 text-[10px]">{c.marker}</b>{" "}
-                          {c.url ? <a className="text-teal-ink hover:underline" href={c.url} target="_blank" rel="noreferrer">{c.title}</a> : c.title}
+                          {c.url ? <a className="text-ink hover:underline" href={c.url} target="_blank" rel="noreferrer">{c.title}</a> : c.title}
                         </li>
                       ))}
                     </ul>

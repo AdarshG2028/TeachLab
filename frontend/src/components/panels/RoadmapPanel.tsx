@@ -113,12 +113,12 @@ function PhaseCard({ p, index, workspaceId, sessionId, level, onChanged, onJob, 
   p: RoadmapPhase; index: number; workspaceId: string; sessionId: string; level: number;
   onChanged: () => void; onJob: (id: string) => void; onStartPhase: () => void;
 }) {
-  const statusColor = { completed: "bg-aqua-soft text-teal-ink", in_progress: "bg-amber-100 text-amber-800",
-    skipped: "bg-black/10 text-muted", not_started: "bg-white/60 text-muted" }[p.status] ?? "";
+  const statusColor = { completed: "bg-black/10 text-ink", in_progress: "bg-black/10 text-ink",
+    skipped: "bg-black/10 text-muted", not_started: "bg-black/5 text-muted" }[p.status] ?? "";
   return (
     <div className={`card ${p.included ? "" : "opacity-50"}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Phase {index + 1}: {p.title} {p.teacher_edited && <span className="badge bg-aqua-soft text-teal-ink">edited</span>}</h3>
+        <h3 className="font-semibold">Phase {index + 1}: {p.title} {p.teacher_edited && <span className="badge bg-black/10 text-ink">edited</span>}</h3>
         <div className="flex gap-1">
           <span className={`badge ${statusColor}`}>{p.status.replace("_", " ")}</span>
           {sessionId && (
@@ -143,9 +143,9 @@ function PhaseCard({ p, index, workspaceId, sessionId, level, onChanged, onJob, 
             return (
               <tr key={it.id} className={`border-t border-black/5 ${it.included ? "" : "line-through opacity-50"}`}>
                 <td className="py-1">{it.title}{it.optional && " (optional)"}{it.teacher_edited && " ✎"}
-                  {cov.self_reported_understanding ? <span className="ml-1 text-amber-700">(self-reported: {String(cov.self_reported_understanding)})</span> : null}</td>
+                  {cov.self_reported_understanding ? <span className="ml-1 text-muted">(self-reported: {String(cov.self_reported_understanding)})</span> : null}</td>
                 {STAGES.map((s) => <td key={s}>{cov[s] ? "●" : "○"}</td>)}
-                <td><button className="text-teal-ink hover:underline" onClick={async () => {
+                <td><button className="text-ink hover:underline" onClick={async () => {
                   await Api.markCoverage(workspaceId, { concept_key: it.concept_key, concept_name: it.title, stage: "completed",
                     value: !cov.completed });
                   onChanged();

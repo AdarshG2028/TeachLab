@@ -16,8 +16,8 @@ export function JobProgress({ jobId, label, onDone }: { jobId: string | null; la
         <span>{label ?? job?.kind ?? "job"}: <b>{job?.status ?? "queued"}</b> — {current}</span>
         <span>{pct}%</span>
       </div>
-      <div className="mt-1 h-1.5 rounded bg-white/60">
-        <div className={`h-1.5 rounded ${failed ? "bg-red-500" : "bg-aqua"}`} style={{ width: `${pct}%` }} />
+      <div className="mt-1 h-1.5 rounded bg-black/5">
+        <div className={`h-1.5 rounded ${failed ? "bg-black/50" : "bg-ink"}`} style={{ width: `${pct}%` }} />
       </div>
       {failed && <p className="mt-1 text-red-600">{String((job?.error as { message?: string })?.message ?? "Failed")}</p>}
     </div>

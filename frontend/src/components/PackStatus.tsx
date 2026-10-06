@@ -27,7 +27,7 @@ export function PackStatus({ workspaceId, jobId }: { workspaceId: string; jobId:
           ))}
         </ul>
       )}
-      {(result.warnings ?? []).map((w) => <p key={w} className="mt-1 text-xs text-amber-700">{w}</p>)}
+      {(result.warnings ?? []).map((w) => <p key={w} className="mt-1 text-xs text-muted">{w}</p>)}
       {done?.status === "failed" && (
         <p className="mt-1 text-xs text-red-700">{String((done.error as { message?: string }).message ?? "Failed")}</p>
       )}

@@ -6,8 +6,8 @@ import { JobProgress } from "@/components/JobProgress";
 import { ErrorText } from "@/components/ErrorText";
 
 const KIND_STYLE: Record<string, string> = {
-  required: "bg-red-100 text-red-800", recommended: "bg-amber-100 text-amber-800",
-  optional: "bg-aqua-soft text-teal-ink", info: "bg-white/60 text-muted",
+  required: "bg-ink text-white", recommended: "bg-black/10 text-ink",
+  optional: "bg-black/10 text-ink", info: "bg-black/5 text-muted",
 };
 
 export function CoveragePanel({ workspaceId }: { workspaceId: string }) {
@@ -35,7 +35,7 @@ export function CoveragePanel({ workspaceId }: { workspaceId: string }) {
             </ul>
             <div className="flex gap-1 text-xs">
               {["all", "required", "recommended", "optional", "info"].map((k) => (
-                <button key={k} className={`badge ${filter === k ? "bg-charcoal text-white" : "bg-white/60"}`} onClick={() => setFilter(k)}>{k}</button>
+                <button key={k} className={`badge ${filter === k ? "bg-charcoal text-white" : "bg-black/5"}`} onClick={() => setFilter(k)}>{k}</button>
               ))}
             </div>
           </>
@@ -48,7 +48,7 @@ export function CoveragePanel({ workspaceId }: { workspaceId: string }) {
               <span className={`badge ${KIND_STYLE[g.kind]}`}>{g.kind}</span>{" "}
               <b>{g.type.replace(/_/g, " ")}</b>: {g.detail}
               {g.suggested_queries.length > 0 && (
-                <button className="ml-2 text-xs text-teal-ink hover:underline" disabled={!!jobId} onClick={async () => {
+                <button className="ml-2 text-xs text-ink hover:underline" disabled={!!jobId} onClick={async () => {
                   try { setJobId((await Api.research(workspaceId, g.suggested_queries.slice(0, 2))).id); } catch (e) { setError(e); }
                 }}>research this</button>
               )}

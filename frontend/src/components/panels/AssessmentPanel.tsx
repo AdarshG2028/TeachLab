@@ -111,7 +111,7 @@ export function AssessmentPanel({ workspaceId, defaultLevel }: { workspaceId: st
         <div className="card text-sm">
           <h3 className="mb-1 font-semibold">Tests</h3>
           <ul>{list.map((a) => (
-            <li key={a.id}><button className="text-teal-ink hover:underline" onClick={() => open(a.id)}>{a.title}</button>
+            <li key={a.id}><button className="text-ink hover:underline" onClick={() => open(a.id)}>{a.title}</button>
               <span className="text-xs text-muted"> · {a.status} · {a.total_marks} marks</span></li>
           ))}</ul>
         </div>
@@ -127,7 +127,7 @@ function AssessmentView({ workspaceId, a, reload }: { workspaceId: string; a: As
   const [jobId, setJobId] = useState<string | null>(null);
   return (
     <div className="space-y-2">
-      <div className={`card text-sm ${report.consistent ? "" : "border-amber-400"}`}>
+      <div className={`card text-sm ${report.consistent ? "" : "border-ink"}`}>
         <h3 className="font-semibold">{a.title} — {report.total_marks} marks · {a.questions.length} questions</h3>
         <p>{report.consistent ? "Counts and marks match the configuration." : `Issues: ${(report.problems ?? []).join("; ")}`}</p>
         <p className="text-xs text-muted">{report.flagged_questions} question(s) flagged for review · scope: {JSON.stringify(report.scope)}</p>
@@ -152,8 +152,8 @@ function QuestionCard({ n, q, workspaceId, aid, onChanged, onJob }: {
       <div className="flex justify-between">
         <span className="text-xs text-muted">Q{n} · {q.section_id} · {q.type} · {q.difficulty} · {q.marks} marks · {q.origin}</span>
         <span className="flex gap-2 text-xs">
-          <button className="text-teal-ink hover:underline" onClick={() => setEdit(!edit)}>edit</button>
-          <button className="text-teal-ink hover:underline" onClick={async () => {
+          <button className="text-ink hover:underline" onClick={() => setEdit(!edit)}>edit</button>
+          <button className="text-ink hover:underline" onClick={async () => {
             const ins = prompt("Instructions for the replacement question (optional)") ?? "";
             onJob((await Api.regenerateQuestion(workspaceId, aid, q.id, ins)).id);
           }}>regenerate</button>
@@ -177,7 +177,7 @@ function QuestionCard({ n, q, workspaceId, aid, onChanged, onJob }: {
         {q.rubric.length > 0 && <ul>{q.rubric.map((r, i) => <li key={i}>{String(r.criterion)} — {String(r.marks)}</li>)}</ul>}
         {q.source_refs.length > 0 && <p>Based on: {q.source_refs.map((r) => String(r.title)).join("; ")}</p>}
       </details>
-      {q.flags.length > 0 && <ul className="mt-1 text-xs text-amber-700">{q.flags.map((f, i) => <li key={i}>⚑ {String(f.message)}</li>)}</ul>}
+      {q.flags.length > 0 && <ul className="mt-1 text-xs text-muted">{q.flags.map((f, i) => <li key={i}>⚑ {String(f.message)}</li>)}</ul>}
     </div>
   );
 }

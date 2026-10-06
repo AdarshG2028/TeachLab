@@ -39,8 +39,8 @@ export function GuidedBar({ roadmap, currentPhaseKey, busy, onSend }: {
         <ol className="mt-1 flex gap-1" aria-label="phase progress">
           {phases.map((p, i) => (
             <li key={p.key} title={`Phase ${i + 1}: ${p.title} (${p.status.replace("_", " ")})`}
-              className={`h-1 flex-1 rounded-full ${p.status === "completed" ? "bg-aqua shadow-[0_0_8px_var(--color-aqua)]"
-                : p.key === currentPhaseKey ? "bg-ink/60" : p.status === "skipped" ? "bg-black/10" : "bg-black/10"}`} />
+              className={`h-1 flex-1 rounded-full ${p.status === "completed" ? "bg-ink"
+                : p.key === currentPhaseKey ? "bg-black/40" : p.status === "skipped" ? "bg-black/10" : "bg-black/10"}`} />
           ))}
         </ol>
       )}

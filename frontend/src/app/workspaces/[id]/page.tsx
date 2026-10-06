@@ -56,7 +56,7 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
             {TABS.map(([key, label]) => (
               <button key={key} onClick={() => setTab(key)}
                 className={`whitespace-nowrap rounded-full px-3 py-1 text-[13px] font-medium transition ${
-                  tab === key ? "bg-aqua text-[#06323a]" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>
+                  tab === key ? "bg-white text-ink" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>
                 {label}
               </button>
             ))}
@@ -76,7 +76,7 @@ export default function WorkspacePage({ params }: { params: Promise<{ id: string
                 {stats.map(([k, v]) => `${v} ${k.toLowerCase()}`).join(" · ")}
               </li>
               {ov.workflow.map((s, i) => (
-                <li key={s.key} className={s.status === "done" ? "text-aqua" : s.status === "recommended" ? "text-white" : "text-white/50"}>
+                <li key={s.key} className={s.status === "done" ? "text-white" : s.status === "recommended" ? "text-white" : "text-white/50"}>
                   {s.status === "done" ? "✓" : `${i + 1}.`} {s.label}
                 </li>
               ))}

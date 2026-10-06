@@ -36,7 +36,7 @@ export default function Home() {
           {items.length === 0 && <p className="muted px-1 text-sm">No workspaces yet. Create your first one.</p>}
           {items.map((w, i) => (
             <a key={w.id} href={`/workspaces/${w.id}`}
-              className={`${i % 2 === 0 ? "card-dark" : "card card-glow"} fade-in block transition hover:-translate-y-0.5`}>
+              className={`${i % 2 === 0 ? "card-dark" : "card"} fade-in block transition hover:-translate-y-0.5`}>
               <div className="relative z-10 flex items-start justify-between gap-3">
                 <div>
                   <p className="label"><span className="dot mr-1" />{LEVELS[w.familiarity_level]?.label.split(" — ")[0]}</p>
