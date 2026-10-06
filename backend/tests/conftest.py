@@ -27,7 +27,7 @@ TEST_DB = os.environ.get("TEST_DATABASE_URL",
 
 def make_settings(tmp: Path, **overrides) -> Settings:
     base = dict(
-        env="test", database_url=TEST_DB, llm_provider="fake", search_provider="fixture", qdrant_url="",
+        env="test", auth_provider="local", database_url=TEST_DB, llm_provider="fake", search_provider="fixture", qdrant_url="",
         qdrant_path=":memory:", storage_dir=tmp / "storage", worker_poll_seconds=0.2, log_level="WARNING",
         search_fixture_dir=BACKEND_DIR / "tests" / "fixtures" / "search", summary_trigger_tokens=150,
         context_recent_messages=4, retrieval_min_score=0.5,

@@ -1,6 +1,5 @@
-# One image for both the API and the worker (choose with the container command).
-#   API:    uvicorn app.main:app --host 0.0.0.0 --port 8000
-#   Worker: python -m app.worker
+# One image. By default it runs database migrations, then the API. With RUN_WORKER_IN_API=true the job worker
+# runs inside the same process (single-service deploys); otherwise run a second service with: python -m app.worker
 FROM python:3.13-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 \
     HF_HOME=/models
@@ -17,7 +16,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 ARG EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"
 ENV HF_HUB_OFFLINE=1
-RUN useradd -m appuser && mkdir -p /app/storage && chown -R appuser /app /models
+RUN useradd -m appuser && mkdir -p /app/storage && chown appuser /app/storage
 USER appuser
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

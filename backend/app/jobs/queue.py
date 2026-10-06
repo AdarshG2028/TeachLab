@@ -8,12 +8,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import QuotaExceeded
 from app.db.models import Job
 
 NOTIFY_CHANNEL = "teachlab_jobs"
@@ -26,6 +28,30 @@ JOB_KINDS = {
 TERMINAL = {"succeeded", "failed", "cancelled"}
 # Long-running background work; interactive jobs (chat turns, lessons) are claimed first and keep a reserved slot.
 BACKGROUND_KINDS = ("reindex_vectors",)
+
+
+@dataclass
+class Quota:
+    """Per-user and global daily caps on jobs that call paid APIs (0 disables). Set from Settings at startup."""
+
+    per_user: int = 0
+    global_: int = 0
+
+
+QUOTA = Quota()
+COSTLY_KINDS = ("chat_turn", "research", "generate_roadmap", "generate_notes", "generate_assessment",
+                "regenerate_question", "generate_pack", "ingest_url", "ingest_upload")
+
+
+async def _check_quota(s: AsyncSession, user_id: str) -> None:
+    if not (QUOTA.per_user or QUOTA.global_):
+        return
+    since = datetime.now(UTC) - timedelta(hours=24)
+    base = select(func.count()).select_from(Job).where(Job.kind.in_(COSTLY_KINDS), Job.created_at >= since)
+    if QUOTA.per_user and (await s.execute(base.where(Job.user_id == user_id))).scalar_one() >= QUOTA.per_user:
+        raise QuotaExceeded(f"Daily limit reached ({QUOTA.per_user} requests per 24 hours). Try again tomorrow.")
+    if QUOTA.global_ and (await s.execute(base)).scalar_one() >= QUOTA.global_:
+        raise QuotaExceeded("This service has reached its daily capacity. Please try again tomorrow.")
 
 
 async def enqueue(
@@ -47,6 +73,8 @@ async def enqueue(
             if existing.workspace_id != workspace_id or existing.user_id != user_id:
                 raise ValueError("Idempotency key reused across scopes")
             return existing
+    if kind in COSTLY_KINDS:
+        await _check_quota(s, user_id)
     job = Job(kind=kind, user_id=user_id, workspace_id=workspace_id, payload=payload, max_attempts=max_attempts,
               idempotency_key=idempotency_key, progress={"percent": 0, "steps": []},
               run_after=datetime.now(UTC) + timedelta(seconds=delay_seconds))

@@ -62,3 +62,8 @@ class ConfigurationError(AppError):
 class UnsafeURLError(AppError):
     status_code = 400
     code = "unsafe_url"
+
+
+class QuotaExceeded(AppError):
+    status_code = 429
+    code = "quota_exceeded"

@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -370,3 +371,14 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = _updated()
+
+
+class Blob(Base):
+    """File contents when STORAGE_BACKEND=postgres (generated PDFs, uploaded documents)."""
+
+    __tablename__ = "blobs"
+    key: Mapped[str] = mapped_column(String(400), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = _created()

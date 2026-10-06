@@ -29,15 +29,29 @@ export type NotesConfig = S["NotesConfig"];
 export type ExportRequest = S["ExportRequest"];
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-const USER_KEY = "teachlab.userId";
+const KEY = "teachlab.clientId";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function getUserId(): string {
-  if (typeof window === "undefined") return "local-teacher";
-  return window.localStorage.getItem(USER_KEY) || "local-teacher";
+/**
+ * There is no sign-in. Each browser generates a random private id on first use and sends it with every
+ * request; workspaces belong to whoever holds that id. Treat it like a password (see AccessKey component).
+ */
+export function getClientId(): string {
+  if (typeof window === "undefined") return "";
+  let id = window.localStorage.getItem(KEY);
+  if (!id || !UUID_RE.test(id)) {
+    id = crypto.randomUUID();
+    window.localStorage.setItem(KEY, id);
+  }
+  return id;
 }
 
-export function setUserId(id: string): void {
-  window.localStorage.setItem(USER_KEY, id);
+/** Restore access to workspaces created in another browser. Returns false if the key is not valid. */
+export function setClientId(id: string): boolean {
+  const clean = id.trim().toLowerCase();
+  if (!UUID_RE.test(clean)) return false;
+  window.localStorage.setItem(KEY, clean);
+  return true;
 }
 
 export class ApiError extends Error {
@@ -48,7 +62,7 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set("X-User-Id", getUserId());
+  headers.set("X-Client-Id", getClientId());
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });
   if (res.status === 204) return undefined as T;
@@ -136,11 +150,11 @@ export const Api = {
   teachingPack: (id: string, body: S["TeachingPackRequest"]) => api<Job>(`${ws(id)}/teaching-pack`, json(body)),
   artifacts: (id: string) => api<Artifact[]>(`${ws(id)}/artifacts`),
   downloadUrl: (id: string, artifactId: string) =>
-    `${API_URL}${ws(id)}/artifacts/${artifactId}/download?user_id=${encodeURIComponent(getUserId())}`,
+    `${API_URL}${ws(id)}/artifacts/${artifactId}/download?client_id=${encodeURIComponent(getClientId())}`,
 
   job: (jobId: string) => api<Job>(`/api/jobs/${jobId}`),
   jobs: (id: string, activeOnly = false) => api<Job[]>(`${ws(id)}/jobs?active_only=${activeOnly}`),
-  jobEventsUrl: (jobId: string) => `${API_URL}/api/jobs/${jobId}/events?user_id=${encodeURIComponent(getUserId())}`,
+  jobEventsUrl: (jobId: string) => `${API_URL}/api/jobs/${jobId}/events?client_id=${encodeURIComponent(getClientId())}`,
 };
 
 export interface Gap {

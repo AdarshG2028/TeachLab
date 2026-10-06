@@ -36,7 +36,8 @@ def step(msg: str) -> None:
 
 
 async def run(args: argparse.Namespace) -> None:
-    overrides = {} if args.live else {
+    overrides = {"auth_provider": "local"}  # the demo drives the API with the dev X-User-Id header
+    overrides |= {} if args.live else {
         "env": "development", "llm_provider": "fake", "search_provider": "fixture", "qdrant_url": "",
         "qdrant_path": ":memory:", "search_fixture_dir": BACKEND_DIR / "tests" / "fixtures" / "search"}
     settings = Settings(**overrides)

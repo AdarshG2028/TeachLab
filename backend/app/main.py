@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -16,6 +17,7 @@ from app.container import Container
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging, get_logger
+from app.jobs.queue import QUOTA
 
 log = get_logger(__name__)
 
@@ -48,15 +50,31 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.container = container or Container(settings)
+        QUOTA.per_user, QUOTA.global_ = settings.daily_job_limit_per_user, settings.daily_job_limit_global
+        worker_task = None
+        if settings.run_worker_in_api and container is None:
+            from app.worker.handlers import HANDLERS
+            from app.worker.runner import Worker
+
+            c = app.state.container
+            await c.vectors.ensure_collection()
+            await asyncio.to_thread(lambda: c.embeddings)  # load the model once, before taking jobs
+            worker = Worker(c, HANDLERS)
+            worker_task = asyncio.create_task(worker.run())
+            log.info("worker_in_api_started")
         try:
             yield
         finally:
+            if worker_task is not None:
+                worker.stop()
+                await asyncio.wait_for(worker_task, timeout=20)
             if container is None:
                 await app.state.container.close()
 
     app = FastAPI(title="TeachLab API", version="0.1.0", lifespan=lifespan,
                   description="Research, teaching-preparation and assessment platform for teachers.")
-    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True,
+    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
+                       allow_origin_regex=settings.cors_origin_regex, allow_credentials=True,
                        allow_methods=["*"], allow_headers=["*"])
 
     @app.middleware("http")

@@ -27,7 +27,7 @@ class Container:
         self.settings = settings
         self.db = db or Database(settings.database_url, pool_size=settings.db_pool_size)
         self.auth: AuthProvider = self._build_auth()
-        self.storage: StorageProvider = LocalStorage(settings.storage_dir)
+        self.storage: StorageProvider = self._build_storage()
         self._llm: LLMProvider | None = None
         self._search: SearchProvider | None = None
         self._embeddings: EmbeddingProvider | None = None
@@ -35,7 +35,20 @@ class Container:
         self._pdf: PDFProvider | None = None
         self._services: dict[str, Any] = {}
 
+    def _build_storage(self) -> StorageProvider:
+        if self.settings.storage_backend == "postgres":
+            from app.providers.storage.postgres import PostgresStorage
+
+            return PostgresStorage(self.db)
+        if self.settings.storage_backend == "local":
+            return LocalStorage(self.settings.storage_dir)
+        raise ConfigurationError(f"Unknown STORAGE_BACKEND {self.settings.storage_backend}")
+
     def _build_auth(self) -> AuthProvider:
+        if self.settings.auth_provider == "anonymous":
+            from app.auth.anonymous import AnonymousAuthProvider
+
+            return AnonymousAuthProvider()
         if self.settings.auth_provider == "local":
             from app.auth.local import LocalAuthProvider
 

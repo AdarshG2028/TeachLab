@@ -5,6 +5,8 @@ An AI research workspace for teachers. A teacher researches a subject; the syste
 * **Backend:** FastAPI, PostgreSQL, Qdrant, and local BGE embeddings. Groq is the LLM, Exa or Tavily is the web search API, and PDFs are rendered locally with ReportLab.
 * **Frontend:** Next.js, React, TypeScript and Tailwind. This is a functional, replaceable interface that covers the whole workflow.
 
+**Deploying?** See [docs/DEPLOY_VERCEL_RENDER.md](docs/DEPLOY_VERCEL_RENDER.md) (Vercel + Render, no sign-in, usage limits).
+
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment and free-tier notes, and [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md) for status.
 
 ---
@@ -126,13 +128,13 @@ Integration tests run against the docker-compose PostgreSQL (`teachlab_test`), a
 | `QDRANT_URL` / `QDRANT_API_KEY` | Local docker, or [Qdrant Cloud](https://cloud.qdrant.io) free cluster | Leave `QDRANT_URL` empty to use embedded mode (`QDRANT_PATH`). |
 | `DATABASE_URL` | Local docker, or any PostgreSQL 14+ (Neon, Supabase, RDS…) | Must use the `postgresql+asyncpg://` scheme. |
 
-Authentication is local and header-based in this MVP. `AUTH_PROVIDER=local` takes the user from an `X-User-Id` header, and the UI has a user switcher. The app refuses to start this way when `ENV=production`. A Clerk/JWT provider plugs in through `app/auth/base.py::AuthProvider`. Workspace authorization is enforced on every route either way.
+There is no sign-in. Each browser holds a private random key (see the *Access key* box on the home page) and workspaces belong to whoever holds it; `AUTH_PROVIDER=anonymous` is safe for production. `AUTH_PROVIDER=local` (an `X-User-Id` header) is for tests only and is refused when `ENV=production`. Workspace authorization is enforced on every route either way.
 
 ## Known limitations
 
 * **No knowledge graph.** The Neo4j knowledge graph (entities, claims, contradiction detection, ontology review) was removed: it used most of the free-tier LLM budget and the outputs did not depend on it. Source traceability remains through citations; contradiction detection between sources is no longer done.
 
-* **Authentication.** Clerk is not integrated (the user chose to skip auth for now), so local header auth is development-only.
+* **Authentication.** There are no accounts: access is by a private browser key, which cannot be recovered if lost. Public sites should keep the usage limits on and consider an access code or real login.
 * **Real model quality.** It is not verified without keys. The Groq and Tavily integrations are implemented and tested against mocked HTTP. Live tests exist but were skipped in this environment.
 * **PDF math.** Math uses matplotlib *mathtext*: fractions, roots, sums, integrals, Greek letters and sub/superscripts are supported. `align`, `matrix` and `cases` environments print as LaTeX source, and are logged.
 * **PDF fonts and diagrams.** The bundled DejaVu fonts have no CJK glyphs, so Chinese, Japanese and Korean text needs a CJK TTF registered in the PDF provider. Mermaid diagrams render in the web preview only; in PDFs they appear as source code.

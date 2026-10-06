@@ -19,7 +19,7 @@ from app.api.schemas import (
     WorkspaceOverview,
     WorkspaceUpdate,
 )
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, QuotaExceeded
 from app.db.models import Assessment, Job, NotesDocument, ResearchSession, RoadmapVersion, Source, Workspace
 from app.jobs.queue import enqueue
 from app.services.conversation.memory import DEFAULT_STATE, append_message
@@ -64,6 +64,10 @@ async def list_workspaces(principal: PrincipalDep, c: ContainerDep, include_arch
 @router.post("/workspaces", response_model=WorkspaceOut, status_code=201)
 async def create_workspace(body: WorkspaceCreate, principal: PrincipalDep, c: ContainerDep):
     async with c.db.session() as s:
+        cap = c.settings.max_workspaces_per_user
+        if cap and (await s.execute(select(func.count()).select_from(Workspace).where(
+                Workspace.owner_id == principal.user_id))).scalar_one() >= cap:
+            raise QuotaExceeded(f"Workspace limit reached ({cap}). Delete one to create another.")
         ws = Workspace(owner_id=principal.user_id, title=body.title or body.topic, topic=body.topic,
                        description=body.description, audience=body.audience, academic_level=body.academic_level,
                        teaching_goals=body.teaching_goals, familiarity_level=body.familiarity_level,

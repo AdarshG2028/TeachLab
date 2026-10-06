@@ -5,9 +5,10 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_DIR = BACKEND_DIR.parent
@@ -75,17 +76,28 @@ class Settings(BaseSettings):
     embedding_cache_dir: Path | None = None
 
     # --- Storage ---
+    storage_backend: str = "local"  # local (filesystem) | postgres (blobs table; works across services)
     storage_dir: Path = BACKEND_DIR / "storage"
 
+    # --- Public-deployment safety limits (0 disables) ---
+    daily_job_limit_per_user: int = 0
+    daily_job_limit_global: int = 0
+    max_workspaces_per_user: int = 0
+
     # --- Auth ---
-    auth_provider: str = "local"  # local (development/test only)
+    # anonymous: no sign-in; each browser holds a random unguessable client id (safe for production)
+    # local:     X-User-Id header, trusts the caller (development/test only)
+    auth_provider: str = "local"
     default_user_id: str = "local-teacher"
 
     # --- API ---
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # JSON list or comma-separated, e.g. https://app.vercel.app,https://www.example.com
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["http://localhost:3000"])
+    cors_origin_regex: str | None = None  # e.g. https://.*\.vercel\.app for preview deployments
 
     # --- Worker ---
     worker_concurrency: int = 2
+    run_worker_in_api: bool = False  # run the job worker inside the API process (single-service deploys)
     worker_poll_seconds: float = 2.0
     worker_lease_seconds: int = 300
     job_default_max_attempts: int = 3
@@ -115,6 +127,29 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     otel_service_name: str = "teachlab-api"
     otel_exporter_otlp_endpoint: str | None = None
+
+    @field_validator("database_url", "test_database_url", mode="before")
+    @classmethod
+    def _normalize_db_url(cls, v: str) -> str:
+        """Accept provider URLs (postgres://, postgresql://, ?sslmode=require) and use the asyncpg driver."""
+        if not isinstance(v, str):
+            return v
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                v = "postgresql+asyncpg://" + v[len(prefix):]
+        return v.replace("sslmode=", "ssl=")
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                import json
+
+                return json.loads(v)
+            return [o.strip().rstrip("/") for o in v.split(",") if o.strip()]
+        return v
 
     @model_validator(mode="after")
     def _guard_production(self) -> Settings:

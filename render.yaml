@@ -1,0 +1,38 @@
+# Render Blueprint: one Docker web service running the API *and* the job worker in a single process.
+# Render > New > Blueprint > pick this repo, then fill the secrets marked `sync: false`.
+#
+# Plan note: the local embedding model (BGE + torch) needs about 0.8-1.2 GB RAM, so use a 2 GB instance
+# ("standard"). Free/512 MB plans cannot run it, and free web services sleep when idle, which stops background jobs.
+services:
+  - type: web
+    name: teachlab-api
+    runtime: docker
+    plan: standard
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - { key: ENV, value: production }
+      - { key: LOG_JSON, value: "true" }
+      - { key: AUTH_PROVIDER, value: anonymous }
+      - { key: RUN_WORKER_IN_API, value: "true" }
+      - { key: STORAGE_BACKEND, value: postgres }
+      - { key: WORKER_CONCURRENCY, value: "2" }
+      - { key: LLM_PROVIDER, value: groq }
+      - { key: SEARCH_PROVIDER, value: exa }
+      - { key: LLM_MODEL_SMART, value: openai/gpt-oss-120b }
+      - { key: LLM_MODEL_FAST, value: openai/gpt-oss-20b }
+      - { key: LLM_TOKENS_PER_MINUTE, value: "8000" }
+      # protect your API quota from anonymous visitors
+      - { key: DAILY_JOB_LIMIT_PER_USER, value: "40" }
+      - { key: DAILY_JOB_LIMIT_GLOBAL, value: "400" }
+      - { key: MAX_WORKSPACES_PER_USER, value: "10" }
+      # secrets and URLs: set these in the Render dashboard
+      - { key: DATABASE_URL, sync: false }        # Neon / Supabase / Render Postgres connection string
+      - { key: QDRANT_URL, sync: false }          # https://<cluster>.cloud.qdrant.io:6333
+      - { key: QDRANT_API_KEY, sync: false }
+      - { key: GROQ_API_KEY, sync: false }
+      - { key: EXA_API_KEY, sync: false }
+      - { key: CORS_ORIGINS, sync: false }        # your Vercel URL, e.g. https://teachlab.vercel.app

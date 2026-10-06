@@ -74,7 +74,7 @@ Legend:
 - ✅ Durable jobs: retries with backoff, non-retryable failures, lease recovery, idempotency keys, worker re-checks of ownership
 - ✅ Security tests: cross-user access (404 on every route family), SSRF, uploads, production guards
 - ✅ README, ARCHITECTURE, DEPLOYMENT, demo script (`backend/scripts/demo_workflow.py`)
-- ⚠️ Dockerfiles are written but `docker build` was never run. The lockfile pins CPU-only torch on Linux, with no CUDA packages.
+- ✅ Backend Docker image built (3.2 GB, CPU-only torch, no CUDA) and run as in production: `ENV=production`, anonymous auth, worker inside the API, files in Postgres. Verified live: roadmap, teaching pack with 5 PDFs, PDF download, CORS allow/deny, cross-browser isolation. ⚠️ The frontend image and an actual Render/Vercel deployment were not tested.
 - ✅ Smoke-tested as separate processes (uvicorn + worker + `next start`, server Qdrant): chat turn over SSE, CORS, cross-user 404.
 - ✅ UI rendered in headless Edge: home, chat (guided bar), roadmap, notes (KaTeX), tests. ⚠️ Interactive clicks (form submits, edits) were not exercised in a browser; the API paths behind them are covered by integration tests.
 - ✅ Live provider tests: 5 passed (Groq ×4, Exa). Tavily skipped (no key). Run `uv run pytest -m live tests/live` and `scripts/demo_workflow.py --live` after adding keys.
@@ -84,3 +84,6 @@ Legend:
 - Backend: `uv run pytest`: **105 passed**, 5 live tests deselected. `uv run pytest -m live`: 5 skipped (no keys). `ruff`: clean.
 - Frontend: `pnpm test`: **5 passed**. `tsc --noEmit`: clean. `next build`: succeeded.
 - Offline demo (`scripts/demo_workflow.py`, levels 0 and 1): every step succeeded and wrote 5 PDFs.
+
+## Public deployment (no sign-in)
+- ✅ Anonymous per-browser key instead of accounts; access-key copy/restore UI; usage caps (per user, global, workspaces); Postgres file storage; worker-in-API mode; provider DB-URL and CORS parsing; `render.yaml`; `docs/DEPLOY_VERCEL_RENDER.md`. Tests: `tests/integration/test_public_deploy.py` (12), frontend 9.

@@ -77,7 +77,7 @@ class Worker:
         self._background_running = 0
 
     async def _listen(self) -> asyncpg.Connection | None:
-        dsn = self.settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        dsn = self.settings.database_url.replace("postgresql+asyncpg://", "postgresql://").replace("ssl=", "sslmode=")
         try:
             conn = await asyncpg.connect(dsn)
             await conn.add_listener(NOTIFY_CHANNEL, lambda *_: self._wake.set())

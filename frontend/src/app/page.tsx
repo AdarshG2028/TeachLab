@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Api, type Workspace } from "@/lib/api";
-import { UserSwitcher } from "@/components/UserSwitcher";
+import { AccessKey } from "@/components/AccessKey";
 import { WorkspaceForm, LEVELS } from "@/components/WorkspaceForm";
 import { ErrorText } from "@/components/ErrorText";
 
@@ -27,7 +27,7 @@ export default function Home() {
         <p className="muted mt-2 max-w-xl text-sm">
           Build a roadmap, learn each phase, then get notes, a test and an answer key as PDFs, all grounded in real sources.
         </p>
-        <div className="relative z-10 mt-4 text-white"><UserSwitcher onChange={load} /></div>
+        <div className="relative z-10 mt-4 text-white"><AccessKey onChange={load} /></div>
       </section>
       <ErrorText error={error} />
       <div className="grid gap-4 md:grid-cols-2">

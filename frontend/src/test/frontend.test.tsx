@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Api, ApiError, api, setUserId } from "@/lib/api";
+import { Api, ApiError, api, getClientId, setClientId } from "@/lib/api";
 import { WorkspaceForm } from "@/components/WorkspaceForm";
 import { JobProgress } from "@/components/JobProgress";
 
@@ -14,13 +14,15 @@ describe("api client", () => {
   beforeEach(() => window.localStorage.clear());
   afterEach(() => vi.unstubAllGlobals());
 
-  it("sends the user identity header and JSON body", async () => {
-    setUserId("teacher-a");
+  it("creates a private client id once and sends it with every request", async () => {
+    const id = getClientId();
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(getClientId()).toBe(id);
     const fetchMock = mockFetch(201, { id: "w1" });
     await Api.createWorkspace({ topic: "IoT", familiarity_level: 1 } as never);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("http://localhost:8000/api/workspaces");
-    expect((init.headers as Headers).get("X-User-Id")).toBe("teacher-a");
+    expect((init.headers as Headers).get("X-Client-Id")).toBe(id);
     expect((init.headers as Headers).get("Content-Type")).toBe("application/json");
     expect(JSON.parse(init.body)).toMatchObject({ topic: "IoT", familiarity_level: 1 });
   });
@@ -34,10 +36,17 @@ describe("api client", () => {
     expect(err.status).toBe(404);
   });
 
-  it("builds download and SSE URLs carrying the user id", () => {
-    setUserId("teacher b");
-    expect(Api.downloadUrl("w1", "a1")).toBe("http://localhost:8000/api/workspaces/w1/artifacts/a1/download?user_id=teacher%20b");
-    expect(Api.jobEventsUrl("j1")).toContain("/api/jobs/j1/events?user_id=");
+  it("builds download and SSE URLs carrying the client id", () => {
+    const id = getClientId();
+    expect(Api.downloadUrl("w1", "a1")).toBe(`http://localhost:8000/api/workspaces/w1/artifacts/a1/download?client_id=${id}`);
+    expect(Api.jobEventsUrl("j1")).toBe(`http://localhost:8000/api/jobs/j1/events?client_id=${id}`);
+  });
+
+  it("restores a valid access key and rejects malformed ones", () => {
+    const other = "3f2b8c1e-5d4a-4b6c-9e7f-0a1b2c3d4e5f";
+    expect(setClientId("not-a-key")).toBe(false);
+    expect(setClientId(` ${other.toUpperCase()} `)).toBe(true);
+    expect(getClientId()).toBe(other);
   });
 });
 
