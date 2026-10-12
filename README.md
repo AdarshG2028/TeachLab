@@ -2,7 +2,7 @@
 
 An AI research workspace for teachers. A teacher researches a subject; the system keeps the sources, adapts to how familiar the teacher is with the subject, and produces teaching roadmaps, step-by-step lessons, teacher and student notes, validated test papers, answer keys and PDFs, all grounded in (and citing) what was actually researched.
 
-* **Backend:** FastAPI, PostgreSQL, Qdrant, and local BGE embeddings. Groq is the LLM, Exa or Tavily is the web search API, and PDFs are rendered locally with ReportLab.
+* **Backend:** FastAPI, PostgreSQL, Qdrant, and local BGE embeddings (ONNX, no PyTorch). Groq is the LLM, Exa or Tavily is the web search API, and PDFs are rendered locally with ReportLab.
 * **Frontend:** Next.js, React, TypeScript and Tailwind. This is a functional, replaceable interface that covers the whole workflow.
 
 **Deploying?** See [docs/DEPLOY_VERCEL_RENDER.md](docs/DEPLOY_VERCEL_RENDER.md) (Vercel + Render, no sign-in, usage limits).
@@ -21,7 +21,7 @@ backend/                 FastAPI app, worker, migrations, tests (uv project, Pyt
   app/db/                SQLAlchemy models (PostgreSQL = source of truth), sessions
   app/jobs/, app/worker/ durable PostgreSQL job queue + worker process + job handlers
   app/llm/               structured (JSON-schema validated) generation, prompt-injection wrapping
-  app/providers/         LLM (Groq, fake), search (Exa, Tavily, fixtures), embeddings (BGE), vector (Qdrant),
+  app/providers/         LLM (Groq, fake), search (Exa, Tavily, fixtures), embeddings (fastembed/ONNX BGE, optional PyTorch), vector (Qdrant),
                          PDF (ReportLab), storage (local FS)
   app/services/          research agent, guided tutor, ingestion, retrieval,
                          conversation memory, roadmap + coverage/gaps, notes, assessment, export
@@ -38,7 +38,7 @@ infra/                   database init (creates the test database)
 * Docker Desktop
 * Python 3.12 or 3.13, and [uv](https://docs.astral.sh/uv/)
 * Node 20 or newer, and pnpm
-* About 2 GB free RAM for the worker (local BGE embeddings run on the CPU; no GPU needed)
+* About 0.5 GB free RAM for the worker (local BGE embeddings run on the CPU via ONNX; no GPU, no PyTorch)
 
 ## Local setup
 
@@ -51,7 +51,7 @@ docker compose up -d            # postgres:5432, qdrant:6333
 
 # 3. Backend
 cd backend
-uv sync --extra otel            # installs deps incl. CPU torch + sentence-transformers
+uv sync --extra otel            # add --extra torch only if you want the PyTorch embedding backend
 uv run alembic upgrade head     # PostgreSQL schema
 #   The Qdrant collection is created automatically on worker start. The first worker start downloads
 #   BAAI/bge-small-en-v1.5 (~130 MB) from Hugging Face.
@@ -116,7 +116,7 @@ pnpm lint                                  # TypeScript type check
 pnpm build
 ```
 
-Integration tests run against the docker-compose PostgreSQL (`teachlab_test`), an in-memory Qdrant and the real local BGE model. Every test removes the data it creates. The LLM and web search are replaced by a deterministic fake LLM and fixture search. These tests therefore verify orchestration, validation, persistence, isolation and provenance; they do not verify the quality of real model output, which the `live` tests and the `--live` demo cover.
+Integration tests run against the docker-compose PostgreSQL (`teachlab_test`), an in-memory Qdrant and the real local BGE model (ONNX). Every test removes the data it creates. The LLM and web search are replaced by a deterministic fake LLM and fixture search. These tests therefore verify orchestration, validation, persistence, isolation and provenance; they do not verify the quality of real model output, which the `live` tests and the `--live` demo cover.
 
 ## Credentials
 

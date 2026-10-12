@@ -1,14 +1,16 @@
 # Deploy: Vercel (frontend) + Render (API + worker)
 
-**Works, with one catch about cost.** The frontend is plain Next.js and fits Vercel's free tier. The backend needs a
-2 GB instance because the local embedding model (BGE + torch) uses 0.8-1.2 GB of RAM, and Render's free and
-512 MB plans cannot run it (free web services also sleep when idle, which stops background jobs). Expect
-about **$25/month** for the Render "standard" instance; everything else can stay on free tiers.
+**Works, on Render's $7/month "Starter" plan (512 MB).** The frontend is plain Next.js and fits Vercel's free
+tier. The backend runs the embedding model on ONNX (no PyTorch), so the whole service fits in 512 MB: measured
+idle 312 MiB and peak 464 MiB under a hard 512 MB limit while doing a roadmap, a lesson and a full 5-PDF teaching
+pack, with no out-of-memory kill. Headroom is only about 50 MB, so if Render shows out-of-memory restarts, move to
+the 2 GB "Standard" plan (~$25/month) or a 1 GB host (see Variants). Render's free plan is not suitable: it sleeps
+when idle, which stops background jobs. Everything else can stay on free tiers.
 
 ```
 Browser ──▶ Vercel (Next.js UI)
    │
-   └──────▶ Render (one Docker service: API + job worker in one process, 2 GB)
+   └──────▶ Render (one Docker service: API + job worker in one process, 512 MB)
                  ├──▶ Postgres  (Neon or Supabase free tier; also stores generated PDFs)
                  ├──▶ Qdrant Cloud (free cluster)
                  ├──▶ Groq (LLM) and Exa (web search)
@@ -50,8 +52,10 @@ workspaces belong to whoever holds the key, and other keys cannot see them or gu
    For preview deployments you can also set `CORS_ORIGIN_REGEX=https://.*\.vercel\.app`.
 
 ## Variants
-- **Cheaper RAM:** replace the embedding provider with a lighter ONNX implementation (about 250 MB, same
-  BGE model, see `docs/DEPLOYMENT.md`); then a 1 GB instance may suffice.
+- **More headroom:** AWS (App Runner or ECS Fargate with 1 GB), Fly.io or any 1 GB VPS run the same Docker image
+  comfortably; set `PORT` if the platform does not (the container listens on `$PORT`, default 8000).
+- **Heavier embeddings:** `EMBEDDING_BACKEND=sentence_transformers` (build with `uv sync --extra torch`) uses
+  PyTorch: ~520 MB for the model alone, needing a 2 GB instance. Vectors are identical to the default.
 - **Separate worker:** set `RUN_WORKER_IN_API=false` on the API and add a Render *background worker* with the same
   image and start command `python -m app.worker`. Keep `STORAGE_BACKEND=postgres` so both services share files.
 - **Other hosts:** the Docker image runs anywhere (Fly.io, Railway, a VPS); it listens on `$PORT` (default 8000).

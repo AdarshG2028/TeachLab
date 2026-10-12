@@ -12,10 +12,12 @@ COPY migrations ./migrations
 COPY alembic.ini ./
 COPY scripts ./scripts
 ENV PATH="/app/.venv/bin:$PATH"
-# Bake the embedding model into the image so workers start without downloading it.
+# Bake the (ONNX) embedding model into the image so the service starts without downloading it.
 ARG EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"
-ENV HF_HUB_OFFLINE=1
+ENV EMBEDDING_CACHE_DIR=/models/fastembed
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding('${EMBEDDING_MODEL}', cache_dir='/models/fastembed')"
+# fewer glibc malloc arenas: lower resident memory in a multi-threaded process (measured to help on 512 MB hosts)
+ENV HF_HUB_OFFLINE=1 MALLOC_ARENA_MAX=2
 RUN useradd -m appuser && mkdir -p /app/storage && chown appuser /app/storage
 USER appuser
 EXPOSE 8000

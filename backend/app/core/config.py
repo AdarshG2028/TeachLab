@@ -70,7 +70,11 @@ class Settings(BaseSettings):
     # --- Embeddings (local BGE) ---
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = 384
-    embedding_device: str = "cpu"
+    # fastembed = ONNX Runtime, ~200 MB RAM, no PyTorch (default);
+    # sentence_transformers = PyTorch, ~520 MB RAM (needs: uv sync --extra torch)
+    embedding_backend: str = "fastembed"
+    embedding_threads: int = 2
+    embedding_device: str = "cpu"  # sentence_transformers only
     embedding_batch_size: int = 32
     embedding_query_instruction: str = "Represent this sentence for searching relevant passages: "
     embedding_cache_dir: Path | None = None

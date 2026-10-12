@@ -94,9 +94,16 @@ class Container:
     @property
     def embeddings(self) -> EmbeddingProvider:
         if self._embeddings is None:
-            from app.providers.embeddings.bge import get_bge
+            if self.settings.embedding_backend == "fastembed":
+                from app.providers.embeddings.fastembed_provider import get_fastembed
 
-            self._embeddings = get_bge(self.settings)
+                self._embeddings = get_fastembed(self.settings)
+            elif self.settings.embedding_backend == "sentence_transformers":
+                from app.providers.embeddings.bge import get_bge
+
+                self._embeddings = get_bge(self.settings)
+            else:
+                raise ConfigurationError(f"Unknown EMBEDDING_BACKEND {self.settings.embedding_backend}")
         return self._embeddings
 
     @property

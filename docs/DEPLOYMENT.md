@@ -9,20 +9,19 @@ TeachLab has four deployable parts:
 
 ## Resource requirements (measured)
 
-Measured on a 4-core, 12 GB Windows laptop with Python 3.13, torch 2.14 (CPU) and `BAAI/bge-small-en-v1.5`. Numbers will differ on other hardware.
+Measured with Python 3.13 and `BAAI/bge-small-en-v1.5` on ONNX Runtime (fastembed). Numbers will differ on other hardware.
 
-| Process | RSS | Notes |
+| Setup | Memory | Notes |
 |---|---|---|
-| API (`uvicorn app.main:app`) | **~120 MB** | Never loads the embedding model or calls the LLM. |
-| Worker, idle with BGE loaded | **~600 MB** | The model is loaded once per worker process. |
-| Worker while embedding a batch | **~740 MB** | Batch size `EMBEDDING_BATCH_SIZE=32`. |
+| **Docker image, API + worker in one process (default)** | **312 MiB idle, 464 MiB peak** | Peak measured under a hard 512 MB container limit during a roadmap + lesson + 5-PDF teaching pack, with `WORKER_CONCURRENCY=1`, `MALLOC_ARENA_MAX=2`; no OOM kill. Image size 1.13 GB. |
+| Same, PyTorch backend (`EMBEDDING_BACKEND=sentence_transformers`) | ~520 MB for the model alone (≈740 MB peak) | Needs a 2 GB instance; image 3.2 GB. Vectors are identical to the ONNX backend (cosine 1.0). |
 
-* **Query embedding latency:** about 40 ms on CPU.
-* **Indexing throughput:** about 6 chunks/s for ~250-token chunks on a busy 4-core CPU. Expect roughly 15–40 chunks/s on a dedicated modern 4-vCPU host. A typical research turn ingests 2–6 sources of about 5–30 chunks each, so indexing takes seconds; the LLM extraction calls dominate.
-* **Cold start:** importing torch and loading the model took 13–70 s on this machine. Bake the model into the image (the Dockerfile already does this) and set `HF_HUB_OFFLINE=1` to skip Hugging Face network checks.
-* **No GPU is required.** Set `EMBEDDING_DEVICE=cuda` only if one is available.
+* **Why ONNX:** `fastembed` runs the same BGE model on ONNX Runtime with the CPU memory arena disabled and 2 threads. Without the arena setting it used 706 MB, so that option matters.
+* **Indexing throughput:** comparable to PyTorch on CPU (a few chunks/s on a busy 4-core laptop; faster on a dedicated host). A research turn embeds seconds of text; LLM calls dominate.
+* **Cold start:** about 5-10 s to load the model; it is baked into the image, so nothing is downloaded at startup.
+* **No GPU is required.**
 
-**Memory-constrained hosts (≤1 GB).** Run the API and the worker as separate services; the API fits in 256–512 MB. Give the worker at least 1 GB and use `WORKER_CONCURRENCY=1`. If even that's too much, implement an `EmbeddingProvider` with fastembed/ONNX using the same BGE model, which needs roughly 250 MB and no torch. Dimensions and normalization stay the same, so vectors remain compatible, and `POST /vectors/reindex` rebuilds the index if you switch models anyway. The Qdrant collection name encodes the model and dimension, so a model change creates a fresh collection rather than mixing vectors.
+**Memory-constrained hosts.** The default image already fits 512 MB with little headroom (see above). To get more, run a single job at a time (`WORKER_CONCURRENCY=1`), keep `MALLOC_ARENA_MAX=2`, or use a 1 GB instance. The Qdrant collection name encodes the model and dimension, so a model change creates a fresh collection rather than mixing vectors.
 
 ## Containers
 

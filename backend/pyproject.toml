@@ -14,8 +14,6 @@ dependencies = [
     "structlog>=24.4",
     "httpx>=0.28",
     "openai>=1.55",
-    "sentence-transformers>=3.3",
-    "torch>=2.5",
     "qdrant-client>=1.12",
     "trafilatura>=2.0",
     "pypdf>=5.1",
@@ -26,9 +24,15 @@ dependencies = [
     "tiktoken>=0.8",
     "python-multipart>=0.0.17",
     "sse-starlette>=2.1",
+    "fastembed>=0.9.0",
 ]
 
 [project.optional-dependencies]
+# Optional PyTorch embedding backend (EMBEDDING_BACKEND=sentence_transformers); heavier: ~520 MB RAM, ~800 MB install.
+torch = [
+    "sentence-transformers>=3.3",
+    "torch>=2.5",
+]
 otel = [
     "opentelemetry-sdk>=1.28",
     "opentelemetry-exporter-otlp-proto-http>=1.28",

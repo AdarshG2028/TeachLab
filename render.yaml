@@ -1,13 +1,15 @@
 # Render Blueprint: one Docker web service running the API *and* the job worker in a single process.
 # Render > New > Blueprint > pick this repo, then fill the secrets marked `sync: false`.
 #
-# Plan note: the local embedding model (BGE + torch) needs about 0.8-1.2 GB RAM, so use a 2 GB instance
-# ("standard"). Free/512 MB plans cannot run it, and free web services sleep when idle, which stops background jobs.
+# Plan note: the embedding model runs on ONNX (no PyTorch). Measured for this image under a hard 512 MB limit:
+# idle 312 MiB, peak 464 MiB during a roadmap + lesson + 5-PDF teaching pack, no out-of-memory kill. So the $7
+# "starter" (512 MB) plan works but has little headroom; if the dashboard shows OOM restarts, switch the plan to
+# "standard" (2 GB). Free plans sleep when idle, which stops background jobs, so they are not suitable.
 services:
   - type: web
     name: teachlab-api
     runtime: docker
-    plan: standard
+    plan: starter
     region: oregon
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
@@ -19,7 +21,8 @@ services:
       - { key: AUTH_PROVIDER, value: anonymous }
       - { key: RUN_WORKER_IN_API, value: "true" }
       - { key: STORAGE_BACKEND, value: postgres }
-      - { key: WORKER_CONCURRENCY, value: "2" }
+      - { key: WORKER_CONCURRENCY, value: "1" }   # one job at a time keeps peak memory low
+      - { key: MALLOC_ARENA_MAX, value: "2" }
       - { key: LLM_PROVIDER, value: groq }
       - { key: SEARCH_PROVIDER, value: exa }
       - { key: LLM_MODEL_SMART, value: openai/gpt-oss-120b }
