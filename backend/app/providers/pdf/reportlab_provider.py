@@ -362,26 +362,40 @@ class MarkdownToFlowables:
         except Exception:
             lexer = TextLexer()
         style = get_style_by_name("friendly")
-        parts: list[str] = []
+        # Highlighted markup is built per line so long listings can be cut into table rows: a single table
+        # cell taller than a page cannot be split by ReportLab (LayoutError "Splitting error").
+        lines: list[list[str]] = [[]]
         for ttype, value in lex(code.rstrip("\n"), lexer):
             st = style.style_for_token(ttype)
-            esc = html.escape(value)
-            if st.get("color"):
-                esc = f'<font color="#{st["color"]}">{esc}</font>'
-            if st.get("bold"):
-                esc = f"<b>{esc}</b>"
-            parts.append(esc)
-        pre = XPreformatted("".join(parts), self.s["code"])
-        t = Table([[pre]], colWidths=[self.width])
+            for n, piece in enumerate(value.split("\n")):
+                if n:
+                    lines.append([])
+                if not piece:
+                    continue
+                esc = html.escape(piece)
+                if st.get("color"):
+                    esc = f'<font color="#{st["color"]}">{esc}</font>'
+                if st.get("bold"):
+                    esc = f"<b>{esc}</b>"
+                lines[-1].append(esc)
+        # Short listings are one row (a row never splits, so it moves whole to the next page, like keep-together);
+        # long ones are cut into rows so the table can break between them. No KeepTogether: it emits frame
+        # breaks that list items and other containers cannot handle.
+        rows_per_chunk = len(lines) if len(lines) < 40 else 20
+        chunks = ["\n".join("".join(p) for p in lines[k:k + rows_per_chunk])
+                  for k in range(0, len(lines), rows_per_chunk)] or [""]
+        rows: list[list[Flowable]] = [[XPreformatted(c, self.s["code"])] for c in chunks]
+        if caption:
+            rows.insert(0, [Paragraph(f"<i>{caption}</i>", self.s["small"])])
+        t = Table(rows, colWidths=[self.width])
+        last = len(rows) - 1
         t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f5f7fa")),
                                ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#d9e2ec")),
                                ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                               ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
-        items: list[Flowable] = [t]
-        if caption:
-            items.insert(0, Paragraph(f"<i>{caption}</i>", self.s["small"]))
-        items.append(Spacer(1, 6))
-        return KeepTogether(items) if code.count("\n") < 40 else _Group(items)
+                               ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                               ("TOPPADDING", (0, 0), (-1, 0), 4), ("BOTTOMPADDING", (0, last), (-1, last), 4)]))
+        t.spaceAfter = 6
+        return t
 
     def _display_math(self, latex: str) -> Flowable:
         r = self.math.render(latex, 11.5, display=True)
@@ -394,19 +408,6 @@ class MarkdownToFlowables:
         img.hAlign = "CENTER"
         return KeepTogether([Spacer(1, 3), img, Spacer(1, 6)])
 
-
-class _Group(Flowable):
-    """Plain sequence of flowables (lets long code blocks split across pages)."""
-
-    def __init__(self, items: list[Flowable]) -> None:
-        super().__init__()
-        self.items = items
-
-    def split(self, aW, aH):  # noqa: N803
-        return self.items
-
-    def wrap(self, aW, aH):  # noqa: N803
-        return aW, aH + 1  # force split
 
 
 class ReportLabPDFProvider(PDFProvider):

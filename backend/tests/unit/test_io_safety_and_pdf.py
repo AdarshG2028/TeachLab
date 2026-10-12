@@ -133,3 +133,16 @@ graph TD; A-->B
     assert "Grüße" in text
     assert "\\begin{align}" in text  # unsupported environment falls back to source, not dropped
     assert reader.metadata.title == "Quantum Notes"
+
+
+def test_pdf_code_block_taller_than_a_page_splits():
+    """A single huge fenced block used to raise ReportLab's 'Splitting error' (one-row table > page)."""
+    code = "\n".join(f"Given: loss L(θ) = (1/2)(θ-3)^2, step {i}: θ = θ - 0.1*(θ-3)" for i in range(160))
+    md = f"Worked example:\n\n```\n{code}\n```\n\n1. A step\n\n   ```python\n{code}\n   ```\n\nDone marker."
+    spec = DocumentSpec(meta=DocumentMeta(title="Long code"),
+                        sections=[DocumentSection(heading="Example", markdown=md)])
+    data = ReportLabPDFProvider().render(spec)
+    reader = PdfReader(io.BytesIO(data))
+    text = "\n".join(p.extract_text() for p in reader.pages)
+    assert len(reader.pages) >= 4
+    assert "step 0:" in text and "step 159:" in text and "Done marker." in text
