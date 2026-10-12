@@ -38,3 +38,6 @@ Thumbs.db
 demo_output/
 next_build.log
 frontend_install.log
+
+# Local media (demo videos)
+/media/

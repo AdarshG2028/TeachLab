@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Api, ApiError, api, getClientId, setClientId } from "@/lib/api";
 import { WorkspaceForm } from "@/components/WorkspaceForm";
 import { JobProgress } from "@/components/JobProgress";
+import { normalizeMath } from "@/components/Markdown";
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn().mockResolvedValue(new Response(body === null ? null : JSON.stringify(body), { status }));
@@ -108,5 +109,14 @@ describe("GuidedBar", () => {
     render(<GuidedBar roadmap={roadmap(["completed", "completed"])} currentPhaseKey="p2" busy={false} onSend={vi.fn()} />);
     expect(screen.queryByText(/Next phase/)).toBeNull();
     expect(screen.getByTestId("guided-bar")).toHaveTextContent("All 2 phases completed");
+  });
+});
+
+describe("normalizeMath", () => {
+  it("converts \\( \\) and \\[ \\] to dollar math but leaves code alone", () => {
+    expect(normalizeMath(String.raw`loss \(\mathcal L_{MSE}\) here`)).toBe(String.raw`loss $\mathcal L_{MSE}$ here`);
+    expect(normalizeMath(String.raw`\[ a^2 + b^2 \]`)).toContain("$$\na^2 + b^2\n$$");
+    const code = "`\\(x\\)` and\n```\n\\[y\\]\n```";
+    expect(normalizeMath(code)).toBe(code);
   });
 });
