@@ -1,0 +1,8 @@
+# {$DOMAIN} is your hostname, e.g. api.example.com or 3-91-12-34.nip.io (free, no domain purchase needed).
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy api:8000 {
+		# do not buffer server-sent events (job progress)
+		flush_interval -1
+	}
+}
